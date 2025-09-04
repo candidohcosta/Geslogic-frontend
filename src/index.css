@@ -1,7 +1,36 @@
 /* frontend/src/index.css */
+@import "~slick-carousel/slick/slick.css"; 
+@import "~slick-carousel/slick/slick-theme.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --popover: 0 0% 100%; /* Igual ao background */
+    --popover-foreground: 222.2 84% 4.9%; /* Igual ao foreground */
+    
+    --muted: 210 40% 96.1%; /* Mesma cor do 'secondary' */
+    --muted-foreground: 215.4 16.3% 46.9%; /* Um cinzento mais suave */
+    --accent: 210 40% 96.1%; /* Mesma cor do 'secondary' */
+    --accent-foreground: 222.2 47.4% 11.2%; /* O nosso texto principal */
+
+    --card: 0 0% 100%; /* Fundo do cartão (branco) */
+    --card-foreground: 222.2 84% 4.9%; /* Texto do cartão (escuro) */
+  }
+}
 
 body {
   margin: 0;
@@ -15,4 +44,14 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Esconde a barra de ferramentas do Quill quando o editor está em modo readonly */
+.quill-readonly .ql-toolbar {
+  display: none;
+}
+
+/* Opcional: Adiciona um estilo visual para o editor em modo readonly */
+.quill-readonly .ql-container {
+  background-color: #f3f4f6; /* bg-gray-100 */
 }

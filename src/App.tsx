@@ -1,10 +1,14 @@
-// frontend/src/App.tsx
+// frontend/src/App.tsx (VERSÃO FINAL E CORRIGIDA)
+
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { UserRole } from './types/user';
+import { CompanyProvider } from './context/CompanyContext';
+import { HelmetProvider } from 'react-helmet-async';
 
-// --- Importar Interfaces ---
-import { UserData } from './types/user';
-
-// --- Importar Componentes ---
+// Importar Componentes e Páginas
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Sidebar from './components/Sidebar';
@@ -13,266 +17,182 @@ import LoginForm from './pages/LoginForm';
 import RegisterForm from './pages/RegisterForm';
 import Dashboard from './pages/Dashboard';
 import EditProfilePage from './pages/EditProfilePage';
-import CompanyDetailsPage from './pages/CompanyDetailsPage';
+import CompanyEditPage from './pages/CompanyEditPage';
 import ListCompaniesPage from './pages/ListCompaniesPage';
 import ListCompanyAdminsPage from './pages/ListCompanyAdminsPage';
+import CreateCompanyPage from './pages/CreateCompanyPage';
+import CreateCompanyAdminPage from './pages/CreateCompanyAdminPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
+import EditCompanyAdminPage from './pages/EditCompanyAdminPage';
+import CreateEventPage from './pages/CreateEventPage';
+import ListEventsPage from './pages/ListEventsPage';
+import EventRegistrationPreviewPage from './pages/EventRegistrationPreviewPage';
+import EditEventPage from './pages/EditEventPage';
+import CompanySmtpConfigPage from './pages/CompanySmtpConfigPage';
+import PublicEventDetailsPage from './pages/PublicEventDetailsPage';
+import PublicCompanyPage from './pages/PublicCompanyPage';
+import { useCompany } from './context/CompanyContext';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import EventRegistrationsPage from './pages/EventRegistrationsPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import LogsPage from './pages/LogsPage';
+import PublicEventPage from './pages/PublicEventDetailsPage'
+import EmailTemplatesPage from './pages/EmailTemplatesPage';
+import EditTemplatePage from './pages/EditTemplatePage';
+import SentEmailsLogPage from './pages/SentEmailsLogPage';
+import CompanyHomepageEditPage from './pages/CompanyHomepageEditPage';
+import MyRegistrationsPage from './pages/MyRegistrationsPage';
+import SystemHealthPage from './pages/SystemHealthPage';
 
-// --- Componente Principal da Aplicação ---
-export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'login' | 'register' | 'dashboard' | 'editProfile' | 'companyDetails' | 'listCompanies' | 'listCompanyAdmins'>('landing');
-  const [user, setUser] = useState<UserData | null>(null);
-  const [isAuthChecked, setIsAuthChecked] = useState(false);
+// Cria o cliente do TanStack Query FORA do componente
+const queryClient = new QueryClient();
 
-  // Função para atualizar o URL do frontend (apenas o caminho)
-  const updateUrl = (view: string) => {
-    let newPath = '/';
-    if (view === 'dashboard') {
-      newPath = '/dashboard';
-    } else if (view === 'editProfile') {
-      newPath = '/edit-profile';
-    } else if (view === 'companyDetails') {
-      newPath = '/company-details';
-    } else if (view === 'listCompanies') {
-      newPath = '/companies';
-    } else if (view === 'listCompanyAdmins') {
-      newPath = '/company-admins';
-    } else if (view === 'login') {
-      newPath = '/login';
-    } else if (view === 'register') {
-      newPath = '/register';
-    }
-    window.history.pushState({ path: newPath }, '', newPath);
-  };
+// Este é o nosso componente principal de layout e rotas.
+// Ele só é renderizado DEPOIS de o AuthProvider ter a informação de autenticação.
+function AppLayout() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const { companySlug } = useCompany();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const showSidebar = isAuthenticated && (user?.role === UserRole.PLATFORM_ADMIN || user?.role === UserRole.COMPANY_ADMIN);
 
-  useEffect(() => {
-    const storedToken = localStorage.getItem('accessToken');
-    const storedUser = localStorage.getItem('user');
 
-    if (storedToken && storedUser) {
-      try {
-        const parsedUser: UserData = JSON.parse(storedUser);
-        
-        if (!user || user.id !== parsedUser.id) {
-          setUser(parsedUser);
-          console.log('User loaded from localStorage in useEffect:', parsedUser);
-        }
+  // 2. ADICIONA ESTE useEffect
+   useEffect(() => {
+    // Só executa esta lógica DEPOIS de a verificação inicial ter terminado
+    if (!isLoading && !isAuthenticated) {
+      // Lista de caminhos que são considerados "públicos" e seguros
+      const publicPaths = [
+        '/',
+        '/login',
+        '/register',
+        '/forgot-password',
+        '/reset-password',
+      ];
+      
+      const isPublicDynamicPath = 
+        location.pathname.startsWith('/events/') || 
+        location.pathname.startsWith('/companies/');
 
-        const path = window.location.pathname;
-        let initialView: typeof currentView = 'landing';
-
-        if (path.includes('/dashboard')) {
-          initialView = 'dashboard';
-        } else if (path.includes('/edit-profile')) {
-          initialView = 'editProfile';
-        } else if (path.includes('/company-details')) {
-          initialView = 'companyDetails';
-        } else if (path.includes('/companies')) {
-          initialView = 'listCompanies';
-        } else if (path.includes('/company-admins')) {
-          initialView = 'listCompanyAdmins';
-        } else if (path.includes('/login')) {
-          initialView = 'login';
-        } else if (path.includes('/register')) {
-          initialView = 'register';
-        } else {
-          initialView = 'dashboard';
-        }
-        
-        if (currentView !== initialView) {
-          setCurrentView(initialView);
-        }
-        
-      } catch (e) {
-        console.error('Falha ao analisar o utilizador do localStorage', e);
-        localStorage.clear();
-        setUser(null);
-        setCurrentView('landing');
-        updateUrl('landing');
+      // Se estamos num caminho que NÃO É público, redirecionamos para o login
+      if (!publicPaths.includes(location.pathname) && !isPublicDynamicPath) {
+        navigate('/login', { replace: true });
       }
-    } else {
-      if (user !== null) {
-        setUser(null);
-      }
-      if (currentView !== 'landing') {
-        setCurrentView('landing');
-      }
-      updateUrl('landing');
     }
-    setIsAuthChecked(true);
-
-    const handlePopState = () => {
-      const path = window.location.pathname;
-      let newView: typeof currentView = 'landing';
-
-      if (path.includes('/dashboard')) {
-        newView = 'dashboard';
-      } else if (path.includes('/edit-profile')) {
-        newView = 'editProfile';
-      } else if (path.includes('/company-details')) {
-        newView = 'companyDetails';
-      } else if (path.includes('/companies')) {
-        newView = 'listCompanies';
-      } else if (path.includes('/company-admins')) {
-        newView = 'listCompanyAdmins';
-      } else if (path.includes('/login')) {
-        newView = 'login';
-      } else if (path.includes('/register')) {
-        newView = 'register';
-      } else {
-        newView = 'landing';
-      }
-      setCurrentView(newView);
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  useEffect(() => {
-    const currentPath = window.location.pathname;
-    let expectedPath = '/';
-    if (currentView === 'dashboard') {
-      expectedPath = '/dashboard';
-    } else if (currentView === 'editProfile') {
-      expectedPath = '/edit-profile';
-    } else if (currentView === 'companyDetails') {
-      expectedPath = '/company-details';
-    } else if (currentView === 'listCompanies') {
-      expectedPath = '/companies';
-    } else if (currentView === 'listCompanyAdmins') {
-      expectedPath = '/company-admins';
-    } else if (currentView === 'login') {
-      expectedPath = '/login';
-    } else if (currentView === 'register') {
-      expectedPath = '/register';
-    }
-
-    if (currentPath !== expectedPath) {
-      updateUrl(currentView);
-    }
-  }, [currentView]);
+  }, [isLoading, isAuthenticated, navigate, location.pathname]); 
 
 
-  const handleLoginSuccess = (token: string, userData: UserData) => {
-    setUser(userData);
-    localStorage.setItem('accessToken', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    console.log('User logged in (handleLoginSuccess):', userData);
-
-    setCurrentView('dashboard');
-  };
-
-  const handleRegisterSuccess = () => {
-    setCurrentView('login');
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.clear();
-    setCurrentView('landing');
-  };
-
-  const handleNavigateToEditProfile = () => {
-    setCurrentView('editProfile');
-  };
-
-  const handleNavigateToCompanyDetails = () => {
-    setCurrentView('companyDetails');
-  };
-
-  // Funções de navegação para a Sidebar
-  const handleNavigateToDashboard = () => {
-    setCurrentView('dashboard');
-  };
-
-  const handleNavigateToCreateCompany = () => {
-    console.log('Navegar para Criar Empresa');
-  };
-
-  const handleNavigateToCreateCompanyAdmin = () => {
-    console.log('Navegar para Criar Company Admin');
-  };
-
-  const handleNavigateToListCompanies = () => {
-    setCurrentView('listCompanies');
-  };
-
-  const handleNavigateToListCompanyAdmins = () => {
-    setCurrentView('listCompanyAdmins');
-  };
-
-  // Renderiza o conteúdo apenas quando a verificação de autenticação inicial estiver concluída
-  if (!isAuthChecked) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <p className="text-gray-700">A carregar...</p>
+      <div className="flex h-screen items-center justify-center">
+        <p>A carregar sessão...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Cabeçalho fixo no topo */}
-      <Header
-        user={user}
-        onLogout={handleLogout}
-        onSwitchToLogin={() => { setCurrentView('login'); }}
-        onSwitchToRegister={() => { setCurrentView('register'); }}
-        onNavigateToLanding={() => { setCurrentView('landing'); }}
-        onNavigateToEditProfile={handleNavigateToEditProfile}
-        onNavigateToCompanyDetails={handleNavigateToCompanyDetails}
-      />
-
-      {/* Conteúdo principal e Sidebar - Este div agora é o container flex para a sidebar e o conteúdo principal */}
-      {/* O pt-16 empurra este container para baixo do header fixo */}
-      <div className="flex flex-grow pt-16">
-        {user && user.role === 'PLATFORM_ADMIN' && (
-          <Sidebar
-            user={user}
-            currentView={currentView}
-            onNavigateToDashboard={handleNavigateToDashboard}
-            onNavigateToCreateCompany={handleNavigateToCreateCompany}
-            onNavigateToCreateCompanyAdmin={handleNavigateToCreateCompanyAdmin}
-            onNavigateToListCompanies={handleNavigateToListCompanies}
-            onNavigateToListCompanyAdmins={handleNavigateToListCompanyAdmins}
-            isSidebarOpen={true}
+    <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
+      <Header onMenuClick={() => setIsSidebarOpen(true)} /> {/* Passar uma função para o Header */}
+      
+       <div className={`flex-grow pt-16 grid ${showSidebar ? 'md:grid-cols-[256px_1fr]' : 'grid-cols-1'}`}>
+        {/* SOBREPOSIÇÃO PARA ECRÃS PEQUENOS */}
+        {isSidebarOpen && (
+          <div
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 z-30 md:hidden"
+            aria-hidden="true"
           />
         )}
-        {/* O main content precisa de flex-grow para ocupar o espaço restante. REMOVIDO: ml-64, items-center e justify-center */}
-        <main className={`flex-grow flex flex-col p-4 pb-20 ${user && user.role === 'PLATFORM_ADMIN' ? '' : ''}`}>
-          {currentView === 'landing' && <LandingPage />}
-          {currentView === 'login' && (
-            <LoginForm
-              onLoginSuccess={handleLoginSuccess}
-              onSwitchToRegister={() => { setCurrentView('register'); }}
-            />
-          )}
-          {currentView === 'register' && (
-            <RegisterForm
-              onRegisterSuccess={handleRegisterSuccess}
-              onSwitchToLogin={() => { setCurrentView('login'); }}
-            />
-          )}
-          {currentView === 'dashboard' && user && (
-            <Dashboard user={user} onLogout={handleLogout} />
-          )}
-          {currentView === 'editProfile' && user && (
-            <EditProfilePage user={user} onBack={() => setCurrentView('dashboard')} />
-          )}
-          {currentView === 'companyDetails' && user && user.companyId && (
-            <CompanyDetailsPage user={user} onBack={() => setCurrentView('dashboard')} />
-          )}
-          {currentView === 'listCompanies' && user && user.role === 'PLATFORM_ADMIN' && (
-            <ListCompaniesPage user={user} onBack={() => setCurrentView('dashboard')} />
-          )}
-          {currentView === 'listCompanyAdmins' && user && user.role === 'PLATFORM_ADMIN' && (
-            <ListCompanyAdminsPage user={user} onBack={() => setCurrentView('dashboard')} />
-          )}
+
+        {/* SIDEBAR */}
+        {isAuthenticated && (user?.role === UserRole.PLATFORM_ADMIN || user?.role === UserRole.COMPANY_ADMIN) && (
+          <Sidebar
+            isSidebarOpen={isSidebarOpen}
+            toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          />
+        )}
+        
+        <main className="flex-grow p-4 w-full overflow-y-auto">
+          <Routes>
+            {/* ROTA ESPECIAL PARA A RAIZ DE UM SUBDOMÍNIO */}
+            {companySlug && <Route path="/" element={<PublicCompanyPage />} />}
+            
+            {/* ROTAS PÚBLICAS GERAIS */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={!isAuthenticated ? <LoginForm /> : <Navigate to="/dashboard" />} />
+            <Route path="/register" element={!isAuthenticated ? <RegisterForm /> : <Navigate to="/dashboard" />} />
+            <Route path="/events/:eventId" element={<PublicEventDetailsPage />} />
+            <Route path="/companies/:slug" element={<PublicCompanyPage />} />
+<Route path="/events/:eventId" element={<PublicEventPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+            {/* ROTAS PROTEGIDAS */}
+            <Route element={<ProtectedRoute />}>
+              <>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/edit-profile" element={<EditProfilePage />} />
+                <Route path="/change-password" element={<ChangePasswordPage />} />
+                <Route path="/events/list" element={<ListEventsPage />} />
+                <Route path="/events/preview/:eventId" element={<EventRegistrationPreviewPage />} />
+
+
+                    <Route path="/events/create" element={<CreateEventPage />} />
+                    <Route path="/events/edit/:eventId" element={<EditEventPage />} />
+                    <Route path="/events/:eventId/registrations" element={<EventRegistrationsPage />} />
+
+
+                    <Route path="/companies/list" element={<ListCompaniesPage />} />
+                    <Route path="/companies/create" element={<CreateCompanyPage />} />
+                    <Route path="/companies/edit/:companyId" element={<CompanyEditPage />} />
+                    <Route path="/companies/edit/:companyId" element={<CompanyEditPage />} />
+                    <Route path="/companies/homepage/edit/:companyId" element={<CompanyHomepageEditPage />} />
+                    
+                    <Route path="/company-admins/list" element={<ListCompanyAdminsPage />} />
+                    <Route path="/company-admins/list/:companyId" element={<ListCompanyAdminsPage />} />
+                    <Route path="/company-admins/create" element={<CreateCompanyAdminPage />} />
+                    <Route path="/company-admins/edit/:adminId" element={<EditCompanyAdminPage />} />
+                    <Route path="/companies/smtp-config/:companyId" element={<CompanySmtpConfigPage />} />
+
+                
+
+                    <Route path="/company-details" element={<CompanyEditPage />} />
+                    <Route path="/company-admins/list" element={<ListCompanyAdminsPage />} />
+
+                    <Route path="/email-templates" element={<EmailTemplatesPage />} />
+                    <Route path="/email-templates/new" element={<EditTemplatePage />} />
+                    <Route path="/email-templates/edit/:templateId" element={<EditTemplatePage />} />
+
+
+                    <Route path="/logs" element={<LogsPage />} />
+                    <Route path="/sent-emails-log" element={<SentEmailsLogPage />} />
+                    <Route path="/app/system-health" element={<SystemHealthPage />} />
+
+                    <Route path="/my-registrations" element={<MyRegistrationsPage />} />
+              </>
+      </Route>
+
+      <Route path="*" element={<p>Página não encontrada</p>} />
+    </Routes>
         </main>
       </div>
-
-      {/* Rodapé fixo na parte inferior */}
       <Footer />
     </div>
+  );
+}
+// O componente App "pai" que apenas fornece os contextos
+export default function App() {
+  return (
+    <AuthProvider>
+      <CompanyProvider>
+        <QueryClientProvider client={queryClient}>
+          <HelmetProvider>
+            <AppLayout />
+          </HelmetProvider>
+        </QueryClientProvider>
+    </CompanyProvider>
+    </AuthProvider>
   );
 }

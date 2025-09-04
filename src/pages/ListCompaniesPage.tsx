@@ -1,8 +1,29 @@
-// frontend/src/pages/ListCompaniesPage.tsx
-import React, { useState, useEffect } from 'react';
-import { UserData } from '../types/user';
+// frontend/src/pages/ListCompaniesPage.tsx (VERSÃO FINAL E CORRIGIDA)
 
-// Interface para os dados da empresa (simplificada para exibição)
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { UserRole } from '../types/user';
+import CompanyDetailsPage from './CompanyEditPage';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { fetchCompanies, activateDeactivateCompany, deleteCompany } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { Card, CardHeader, CardDescription, CardTitle, CardContent } from '../components/ui/Card';
+import { Input } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
+import { Label } from '../components/ui/Label';
+import { Checkbox } from '../components/ui/Checkbox';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "../components/ui/Table";
+import { FilePenLine, Mail, Users, Ban, Trash2, LayoutDashboard, Copy} from 'lucide-react';
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
+
+
 interface CompanyData {
   id: string;
   name: string;
@@ -12,151 +33,462 @@ interface CompanyData {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  address?: string;
+  phone?: string;
 }
 
-interface ListCompaniesPageProps {
-  user: UserData;
-  onBack: () => void;
-}
+const ListCompaniesPage: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-const ListCompaniesPage: React.FC<ListCompaniesPageProps> = ({ user, onBack }) => {
-  const [companies, setCompanies] = useState<CompanyData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isCopied, copy] = useCopyToClipboard();
 
+  // Estados relacionados apenas com a UI
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; company: CompanyData | null; }>({ visible: false, x: 0, y: 0, company: null });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  //const [showEditModal, setShowEditModal] = useState(false);
+  //const [selectedCompanyForEdit, setSelectedCompanyForEdit] = useState<CompanyData | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedCompanyForDelete, setSelectedCompanyForDelete] = useState<CompanyData | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [selectedCompanyForDeactivate, setSelectedCompanyForDeactivate] = useState<CompanyData | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+
+  // Hook do TanStack Query para buscar os dados
+  const { data: companies = [], isLoading, error } = useQuery<CompanyData[], Error>({
+    queryKey: ['companies'],
+    queryFn: fetchCompanies,
+    enabled: user?.role === UserRole.PLATFORM_ADMIN,
+  });
+
+  // Hook do TanStack Query para a mutação de ativar/desativar
+  const activateDeactivateMutation = useMutation({
+    mutationFn: activateDeactivateCompany,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+
+  // Hook do TanStack Query para a mutação de apagar
+  const deleteCompanyMutation = useMutation({
+    mutationFn: deleteCompany,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      handleCloseDeleteModal();
+    },
+  });
+
+  // Handler para o menu de contexto
+  const handleContextMenu = (e: React.MouseEvent, company: CompanyData) => {
+    e.preventDefault();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, company: company });
+  };
+
+  // Efeito para fechar o menu de contexto
   useEffect(() => {
-    const fetchCompanies = async () => {
-      // Apenas Platform Admins podem listar todas as empresas
-      if (user.role !== 'PLATFORM_ADMIN') {
-        setError('Acesso negado. Apenas administradores da plataforma podem listar empresas.');
-        setLoading(false);
-        return;
-      }
-
-      const accessToken = localStorage.getItem('accessToken');
-      if (!accessToken) {
-        setError('Token de autenticação não encontrado.');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const response = await fetch('http://localhost:3000/companies', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Falha ao carregar a lista de empresas.');
-        }
-
-        const data = await response.json();
-        setCompanies(data.companies); // Assumindo que o backend retorna { message: ..., companies: [...] }
-      } catch (err: any) {
-        setError(err.message || 'Erro ao buscar dados das empresas.');
-        console.error('Erro ao buscar dados das empresas:', err);
-      } finally {
-        setLoading(false);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu({ ...contextMenu, visible: false });
       }
     };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [contextMenu]);
 
-    fetchCompanies();
-  }, [user]); // Dependência no objeto user para re-fetch se o user mudar
+  // Handlers que chamam as mutações
+/*   const handleConfirmDeactivate = () => {
+    if (!contextMenu.company) return;
+    activateDeactivateMutation.mutate({
+      companyId: contextMenu.company.id,
+      isActive: !contextMenu.company.isActive,
+    });
+    setContextMenu({ ...contextMenu, visible: false });
+  }; */
 
-  if (loading) {
-    return (
-      <div className="p-6 max-w-4xl mx-auto bg-white rounded-xl shadow-md text-center flex-grow flex flex-col justify-center">
-        <p className="text-gray-700">A carregar lista de empresas...</p>
-      </div>
-    );
+  const handleConfirmDeleteCompany = () => {
+    if (!selectedCompanyForDelete || !confirmDelete) return;
+    deleteCompanyMutation.mutate(selectedCompanyForDelete.id);
+  };
+
+  // Handlers para os modais e UI
+/*   const handleEditCompany = () => {
+    if (contextMenu.company) {
+      setSelectedCompanyForEdit(contextMenu.company);
+      setShowEditModal(true);
+      setContextMenu({ ...contextMenu, visible: false });
+    }
+  }; */
+
+/*   const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setSelectedCompanyForEdit(null);
+  }; */
+
+  const handleDeleteCompanyClick = () => {
+    if (contextMenu.company) {
+      setSelectedCompanyForDelete(contextMenu.company);
+      setShowDeleteModal(true);
+      setConfirmDelete(false);
+      setContextMenu({ ...contextMenu, visible: false });
+    }
+  };
+
+  const handleCloseDeleteModal = () => {
+    setShowDeleteModal(false);
+    setSelectedCompanyForDelete(null);
+    setConfirmDelete(false);
+  };
+
+  // Esta função agora serve para ATIVAR diretamente ou para iniciar o processo de DESATIVAÇÃO.
+  const handleActivateDeactivate = () => {
+    if (!contextMenu.company) return;
+
+    if (contextMenu.company.isActive) {
+      // Se a empresa está ATIVA, queremos DESATIVÁ-LA.
+      // Então, abrimos o modal de confirmação.
+      setSelectedCompanyForDeactivate(contextMenu.company);
+      setShowDeactivateModal(true);
+      setConfirmDeactivate(false);
+    } else {
+      // Se a empresa está INATIVA, queremos ATIVÁ-LA.
+      // Fazemos isto diretamente, sem modal.
+      activateDeactivateMutation.mutate({
+        companyId: contextMenu.company.id,
+        isActive: true, // Ativar
+      });
+    }
+
+    // Fecha o menu de contexto em ambos os casos
+    setContextMenu({ ...contextMenu, visible: false });
+  };
+
+  // Abre o modal de desativação
+  const handleDeactivateClick = () => {
+    if (contextMenu.company) {
+      setSelectedCompanyForDeactivate(contextMenu.company);
+      setShowDeactivateModal(true);
+      setConfirmDeactivate(false); // Resetar a checkbox
+      setContextMenu({ ...contextMenu, visible: false });
+    }
+  };
+
+  // Fecha o modal de desativação
+  const handleCloseDeactivateModal = () => {
+    setShowDeactivateModal(false);
+    setSelectedCompanyForDeactivate(null);
+    setConfirmDeactivate(false);
+  };
+
+  // Confirma a ação e chama a mutação (a antiga handleConfirmDeactivate)
+  const handleConfirmDeactivate = () => {
+    if (!selectedCompanyForDeactivate || !confirmDeactivate) return;
+    
+    activateDeactivateMutation.mutate({
+      companyId: selectedCompanyForDeactivate.id,
+      isActive: !selectedCompanyForDeactivate.isActive, // A lógica de inverter o estado
+    });
+    
+    handleCloseDeactivateModal(); // Fecha o modal após a chamada
+  };
+
+  // Lógica de filtragem
+  const filteredCompanies = companies.filter(company =>
+    company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    company.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    company.nif.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    company.slug.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (isLoading) {
+    return <div className="text-center p-6">A carregar empresas...</div>;
   }
 
   if (error) {
-    return (
-      <div className="p-6 max-w-4xl mx-auto bg-white rounded-xl shadow-md text-center flex-grow flex flex-col justify-center">
-        <p className="text-red-600">Erro: {error}</p>
-        <button
-          onClick={onBack}
-          className="mt-4 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-        >
-          Voltar
-        </button>
-      </div>
-    );
+    return <div className="text-center p-6 text-red-500">Erro: {error.message}</div>;
   }
+return (
+    // Usamos um Card como contentor principal da página
+  <Card>
+    <CardHeader>
+      <CardTitle>Lista de Empresas</CardTitle>
+      <CardDescription>
+        Lista de todas as empresas registadas no sistema.
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="space-y-4">
+      <div className="mb-4">
+        <Input
+          type="text"
+          placeholder="Pesquisar empresas..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
 
-  return (
-    <div className="p-6 max-w-full mx-auto bg-white rounded-xl shadow-md space-y-4 text-gray-800 flex-grow overflow-auto">
-      <h2 className="text-2xl font-bold text-center mb-4">Listar Empresas</h2>
-      <p className="text-center text-lg mb-6">Lista de todas as empresas registadas no sistema.</p>
-
-      {companies.length === 0 ? (
-        <p className="text-center text-gray-600">Nenhuma empresa encontrada.</p>
+      {filteredCompanies.length === 0 ? (
+        <div className="text-center text-gray-600">
+          <p>Nenhuma empresa encontrada.</p>
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg shadow">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Nome
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Slug
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  NIF
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ativa
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Criada Em
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {companies.map((company) => (
-                <tr key={company.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {company.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {company.slug}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {company.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {company.nif}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {company.isActive ? 'Sim' : 'Não'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(company.createdAt).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          {/* 1. VISTA DE TABELA PARA ECRÃS MÉDIOS E GRANDES */}
+          <div className="hidden md:block rounded-md border"> {/* 'hidden md:block' -> Escondido por defeito, visível a partir de 'md' */}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>NIF</TableHead>
+                  <TableHead>Ativa</TableHead>
+                  <TableHead className="text-right">Ações</TableHead> {/* <-- NOVA COLUNA */}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCompanies.map((company) => (
+                  <TableRow
+                    key={company.id}
+                    onContextMenu={(e) => handleContextMenu(e, company)}
+                    className="cursor-pointer"
+                  >
+                    <TableCell className="font-medium">{company.name}</TableCell>
+                    <TableCell>{company.email}</TableCell>
+                    <TableCell>{company.nif}</TableCell>
+                    <TableCell>{company.isActive ? 'Sim' : 'Não'}</TableCell>
+                    <TableCell className="text-right"> {/* <-- NOVA CÉLULA */}
+<div className="flex items-center justify-end space-x-1">
+    {/* Link para Editar dados gerais da empresa*/}
+    <Button variant="ghost" size="icon" asChild>
+      <Link to={`/companies/edit/${company.id}`} title="Editar Empresa">
+        <FilePenLine className="h-4 w-4" />
+      </Link>
+    </Button>
+    {/* Link para Editar homepage*/}
+    <Button variant="ghost" size="icon" asChild title="Editar Homepage da Empresa">
+      <Link to={`/companies/homepage/edit/${company.id}`}>
+        <LayoutDashboard className="h-4 w-4" />
+      </Link>
+    </Button>
+    {/* Link para Copiar link Publico da homepage*/}
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => {
+        const url = `${window.location.protocol}//${company.slug}.${process.env.REACT_APP_MAIN_DOMAIN}:${window.location.port}`;
+        copy(url);
+        // Opcional: mostrar um feedback visual de "copiado"
+      }}
+      title="Copiar Link Público"
+    >
+      <Copy className="h-4 w-4" />
+    </Button>    
+    {/* Link para Admins */}
+    <Button variant="ghost" size="icon" asChild>
+      <Link to={`/company-admins/list/${company.id}`} title="Ver Administradores">
+        <Users className="h-4 w-4" />
+      </Link>
+    </Button>
+    {/* Link para SMTP */}
+    <Button variant="ghost" size="icon" asChild>
+      <Link to={`/companies/smtp-config/${company.id}`} title="Configurar SMTP">
+        <Mail className="h-4 w-4" />
+      </Link>
+    </Button>
+  </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* 2. VISTA DE CARTÕES PARA ECRÃS PEQUENOS */}
+          <div className="grid grid-cols-1 gap-4 md:hidden"> {/* 'md:hidden' -> Visível por defeito, escondido a partir de 'md' */}
+            {filteredCompanies.map((company) => (
+              <div
+                key={company.id}
+                onContextMenu={(e) => handleContextMenu(e, company)}
+                className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 space-y-2"
+              >
+                <div className="font-bold text-lg">{company.name}</div>
+                <div className="text-sm text-muted-foreground">{company.email}</div>
+                <div className="text-sm"><strong>NIF:</strong> {company.nif}</div>
+                <div className="text-sm">
+                  <strong>Status:</strong> 
+                  <span className={company.isActive ? 'text-green-600' : 'text-red-600'}>
+                    {company.isActive ? ' Ativa' : ' Inativa'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+        
+        {/* O botão Voltar já não é necessário aqui, pois a navegação é feita pela Sidebar/Header */}
+      </CardContent>
+
+
+      {/* Menu de Contexto para as ações da empresa */}
+      {contextMenu.visible && contextMenu.company && (
+        <div
+          ref={contextMenuRef}
+          className="absolute z-50 bg-white border border-gray-300 rounded-md shadow-lg py-1"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+        >
+          <Link
+            to={`/companies/edit/${contextMenu.company.id}`} // <-- NOVO LINK
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+          >
+            Editar
+          </Link>
+          <Link
+            to={`/companies/homepage/edit/${contextMenu.company.id}`} // <-- NOVO LINK
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+          >
+            Editar página inicial
+          </Link>
+            <button
+              onClick={
+                contextMenu.company.isActive
+                  ? handleDeactivateClick // Se está ativa, abre o modal de confirmação para desativar
+                  : handleActivateDeactivate // Se está inativa, ativa diretamente sem modal
+              }
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              {contextMenu.company.isActive ? 'Desativar' : 'Ativar'}
+            </button>
+          {/* Nova opção para ver administradores */}
+          <Link 
+            to={`/company-admins/list/${contextMenu.company.id}`}
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
+          >
+            Administradores
+          </Link>
+          {/* Opção para configurar SMTP, visível apenas para Platform Admin */}
+          {user?.role === UserRole.PLATFORM_ADMIN && (
+            <Link
+              to={`/companies/smtp-config/${contextMenu.company.id}`}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
+            >
+              Configurar SMTP
+            </Link>
+          )}
+          {/* NOVO: Opção para Eliminar empresa, visível apenas para Platform Admin */}
+          {user?.role === UserRole.PLATFORM_ADMIN && (
+            <button
+              onClick={handleDeleteCompanyClick}
+              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+            >
+              Eliminar
+            </button>
+          )}
         </div>
       )}
 
-      <button
-        onClick={onBack}
-        className="mt-6 w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      >
-        Voltar ao Dashboard
-      </button>
-    </div>
-  );
+      {/* Modal de Edição (CompanyDetailsPage como overlay) */}
+{/*       {showEditModal && selectedCompanyForEdit && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-40 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6 relative">
+            <button
+              onClick={handleCloseEditModal}
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl font-bold"
+            >
+              &times;
+            </button>
+            <CompanyDetailsPage
+              companyId={selectedCompanyForEdit.id}
+              onClose={handleCloseEditModal} // Usar handleCloseEditModal como callback de "voltar"
+            />
+          </div>
+        </div>
+      )} */}
+
+      {/* NOVO: Modal de Confirmação de Eliminação */}
+      {showDeleteModal && selectedCompanyForDelete && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <h3 className="text-xl font-bold mb-4 text-gray-900">Confirmar Eliminação</h3>
+            <p className="text-gray-700 mb-4">
+              Tem a certeza que deseja eliminar a empresa <span className="font-semibold">"{selectedCompanyForDelete.name}"</span>?
+              Esta ação é irreversível e removerá todos os dados associados a esta empresa.
+            </p>
+            <div className="flex items-center mb-6">
+              <input
+                id="confirmDeleteCompany"
+                type="checkbox"
+                className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                checked={confirmDelete}
+                onChange={(e) => setConfirmDelete(e.target.checked)}
+              />
+              <label htmlFor="confirmDeleteCompany" className="ml-2 block text-sm text-gray-900">
+                Compreendo que esta ação é irreversível e desejo continuar.
+              </label>
+            </div>
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={handleCloseDeleteModal}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDeleteCompany}
+                className={`px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                  confirmDelete ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-400 cursor-not-allowed'
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500`}
+                disabled={!confirmDelete || deleteCompanyMutation.isPending}
+              >
+                {deleteCompanyMutation.isPending ? 'A Eliminar...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* NOVO: Modal de Confirmação de Desativação */}
+      {showDeactivateModal && selectedCompanyForDeactivate && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <h3 className="text-xl font-bold mb-4">Confirmar Desativação</h3>
+            <p className="text-gray-700 mb-4">
+              Tem a certeza que deseja desativar a empresa <span className="font-semibold">"{selectedCompanyForDeactivate.name}"</span>?
+              <br/><br/>
+              Esta ação irá também **desativar todos os administradores** associados a esta empresa, impedindo-os de aceder à plataforma.
+            </p>
+            <div className="flex items-center mb-6">
+              <Checkbox
+                id="confirmDeactivateCompany"
+                checked={confirmDeactivate}
+                onCheckedChange={(checked) => setConfirmDeactivate(Boolean(checked))}
+              />
+              <Label htmlFor="confirmDeactivateCompany" className="ml-2">
+                Compreendo as consequências e desejo continuar.
+              </Label>
+            </div>
+            <div className="flex justify-end space-x-4">
+              <Button variant="outline" onClick={handleCloseDeactivateModal}>
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive" // Usar a variante destrutiva
+                onClick={handleConfirmDeactivate}
+                disabled={!confirmDeactivate || activateDeactivateMutation.isPending}
+              >
+                {activateDeactivateMutation.isPending ? 'A Desativar...' : 'Desativar Empresa'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}      
+    </Card>
+);
 };
 
 export default ListCompaniesPage;
