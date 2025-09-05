@@ -6,7 +6,7 @@ import { uploadFile } from '../../services/api';
 import { FilePurpose } from '../../types/file';
 import { Button } from './Button';
 import { Label } from './Label';
-import { Loader2, UploadCloud, Trash2, XCircle, File as FileIcon } from 'lucide-react';
+import { Loader2, UploadCloud, Trash2, XCircle, File as FileIcon, FileText } from 'lucide-react';
 
 interface SingleFileUploadProps {
   ownerType: string;
@@ -15,6 +15,7 @@ interface SingleFileUploadProps {
   currentFileUrl?: string | null;
   onUploadSuccess?: (file: any) => void;
   onFileClear?: () => void;
+  accept?: string;
   uploadMode?: 'auto' | 'manual';
   // 'onFileSelect' será chamada no modo 'manual'
   onFileSelect?: (file: File | null) => void;
@@ -27,6 +28,7 @@ export const SingleFileUpload: React.FC<SingleFileUploadProps> = ({
   currentFileUrl,
   onUploadSuccess,
   onFileClear,
+  accept,
   uploadMode = 'auto', // Padrão 'auto' para não quebrar o código existente
   onFileSelect,
 }) => {
@@ -125,7 +127,7 @@ export const SingleFileUpload: React.FC<SingleFileUploadProps> = ({
           type="file"
           className="sr-only" // Esconde o input, mas mantém-no acessível
           onChange={(e) => handleFileSelect(e.target.files)}
-          accept="image/*"
+          accept={accept}
         />
       </div>
       
@@ -145,14 +147,35 @@ export const SingleFileUpload: React.FC<SingleFileUploadProps> = ({
       {currentFileUrl && !file && (
         <div>
           <Label>Ficheiro Atual:</Label>
-          <div className="mt-2 relative group w-fit">
-            <img src={currentFileUrl} alt="Ficheiro atual" className="max-w-xs h-auto rounded-md border" />
+          <div className="mt-2 relative group w-full max-w-xs mx-auto"> {/* Ajusta a largura do contentor */}
+            
+            {currentFileUrl.match(/\.(jpeg|jpg|png|gif)$/i) ? (
+              // Se for uma IMAGEM
+              <img src={currentFileUrl} alt="Ficheiro atual" className="max-w-full h-auto rounded-md border" />
+            ) : (
+              // Se for um DOCUMENTO (PDF, DOC, etc.)
+              <a 
+                href={currentFileUrl} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="flex items-center justify-center p-4 h-32 rounded-md border bg-gray-100 text-indigo-600 hover:bg-gray-200 transition-colors w-full"
+                title="Abrir Documento"
+              >
+                <FileText className="h-10 w-10" />
+              </a>
+            )}
+            
+            {/* O BOTÃO DE APAGAR AGORA É UM ELEMENTO SEPARADO E DISCRETO */}
             {onFileClear && (
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-md">
-                <Button variant="destructive" size="icon" onClick={handleClearFile}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              <Button
+                variant="destructive"
+                size="icon"
+                className="absolute -top-2 -right-2 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                onClick={handleClearFile}
+                title="Remover ficheiro"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             )}
           </div>
         </div>

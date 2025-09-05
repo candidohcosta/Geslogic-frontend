@@ -44,6 +44,8 @@ import SentEmailsLogPage from './pages/SentEmailsLogPage';
 import CompanyHomepageEditPage from './pages/CompanyHomepageEditPage';
 import MyRegistrationsPage from './pages/MyRegistrationsPage';
 import SystemHealthPage from './pages/SystemHealthPage';
+import PolicyDocumentsPage from './pages/PolicyDocumentsPage';
+import EditPolicyPage from './pages/EditPolicyPage';
 
 // Cria o cliente do TanStack Query FORA do componente
 const queryClient = new QueryClient();
@@ -171,6 +173,10 @@ function AppLayout() {
                     <Route path="/app/system-health" element={<SystemHealthPage />} />
 
                     <Route path="/my-registrations" element={<MyRegistrationsPage />} />
+
+                    <Route path="/policy-documents" element={<PolicyDocumentsPage />} />
+                    <Route path="/policy-documents/new" element={<EditPolicyPage />} />
+                    <Route path="/policy-documents/edit/:policyId" element={<EditPolicyPage />} />
               </>
       </Route>
 

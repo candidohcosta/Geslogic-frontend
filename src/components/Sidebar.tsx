@@ -241,11 +241,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
           )}
 
           {user && (user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
+            <>
             <li>
               <Link to="/email-templates" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/email-templates' ? 'bg-gray-700 font-bold' : ''}`}>
                 Templates de Email
               </Link>
             </li>
+            <li>
+              <Link to="/policy-documents" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/policy-documents' ? 'bg-gray-700 font-bold' : ''}`}>
+                Política de Privacidade
+              </Link>
+            </li>
+          </>
           )}
           {user?.role === UserRole.PLATFORM_ADMIN && (
             <>

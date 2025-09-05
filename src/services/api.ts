@@ -449,3 +449,16 @@ export const cleanOrphanRecords = () => apiFetch('/system-health/clean-orphan-re
 export const cleanFunctionallyOrphanRecords = () => {
   return apiFetch('/system-health/clean-functional-orphans', { method: 'DELETE' });
 };
+
+// --- POLICY DOCUMENTS ---
+export const fetchPolicies = () => apiFetch('/policy-documents');
+
+export const fetchPolicyById = (id: string) => apiFetch(`/policy-documents/${id}`);
+
+export const createPolicy = (data: any) => {
+  return apiFetch('/policy-documents', { method: 'POST', body: JSON.stringify(data) });
+};
+
+export const updatePolicy = ({ policyId, data }: { policyId: string, data: any }) => {
+  return apiFetch(`/policy-documents/${policyId}`, { method: 'PATCH', body: JSON.stringify(data) });
+};

@@ -13,12 +13,13 @@ export enum EventFieldType {
   TEXT = "TEXT",
   NUMBER = "NUMBER",
   DATE = "DATE",
-  BOOLEAN = "BOOLEAN",
+  CHECKBOX = "CHECKBOX",
   EMAIL = "EMAIL",
   PHONE = "PHONE",
   FILE = "FILE",
   DROPDOWN = "DROPDOWN",
   TEXTAREA = "TEXTAREA",
+
 }
 
 export interface EventFieldDefinitionData {
