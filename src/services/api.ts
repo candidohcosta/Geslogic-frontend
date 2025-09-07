@@ -462,3 +462,7 @@ export const createPolicy = (data: any) => {
 export const updatePolicy = ({ policyId, data }: { policyId: string, data: any }) => {
   return apiFetch(`/policy-documents/${policyId}`, { method: 'PATCH', body: JSON.stringify(data) });
 };
+
+export const deletePolicy = (id: string) => {
+  return apiFetch(`/policy-documents/${id}`, { method: 'DELETE' });
+};

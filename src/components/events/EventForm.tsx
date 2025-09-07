@@ -92,7 +92,7 @@ export const EventForm: React.FC<EventFormProps> = ({ fieldDefinitions, eventId 
                   case EventFieldType.TEXTAREA:
                     return <Textarea id={field.id} value={formValues[field.id] || ''} onChange={(e) => handleCustomFieldChange(field.id, e.target.value)} placeholder={field.placeholder || ''} required={field.isRequired} />;
                   case EventFieldType.FILE:
-                    return <SingleFileUpload ownerType="ParticipantEventRegistration" ownerId="pending" purpose={FilePurpose.EVENT_DOCUMENT} onFileSelect={(file) => handleCustomFieldChange(field.id, file)} />;
+                    return <SingleFileUpload ownerType="ParticipantEventRegistration" ownerId="pending" purpose={FilePurpose.EVENT_DOCUMENT} onFileSelect={(file: File | null) => handleCustomFieldChange(field.id, file)} />;
                   default:
                     return <Input id={field.id} type={field.fieldType.toLowerCase()} value={formValues[field.id] || ''} onChange={(e) => handleCustomFieldChange(field.id, e.target.value)} placeholder={field.placeholder || ''} required={field.isRequired} />;
                 }
