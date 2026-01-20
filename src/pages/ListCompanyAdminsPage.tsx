@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchCompanyAdmins, activateDeactivateAdmin, deleteCompanyAdmin } from '../services/api';
+import { fetchCompanyAdmins, activateDeactivateAdmin, deleteCompanyAdmin, adminReset2FA } from '../services/api';
 import { UserData, UserRole } from '../types/user';
 import CreateCompanyAdminPage from './CreateCompanyAdminPage';
 import CompanyEditPage from './CompanyEditPage';
@@ -14,7 +14,7 @@ import { Button } from '../components/ui/Button';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Label } from '../components/ui/Label';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "../components/ui/Table";
-import { FilePenLine, Building, Trash2 } from 'lucide-react';
+import { FilePenLine, Building, Trash2,ShieldAlert } from 'lucide-react';
 
 interface CompanyAdminData {
   id: string;
@@ -86,7 +86,7 @@ const ListCompanyAdminsPage: React.FC = () => {
   const handleCloseCreateAdminModal = () => setShowCreateAdminModal(false);
   const handleContextMenu = (e: React.MouseEvent, admin: CompanyAdminData) => {
     e.preventDefault();
-    if (user?.role === UserRole.COMPANY_ADMIN && admin.id === user.id) return;
+    if (user?.role === UserRole.COMPANY_ADMIN && admin.id === user.id) return; // Impede o CompanyAdmin de abrir o menu no seu próprio utilizador
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, admin });
   };
   const handleActivateDeactivateAdmin = () => {
@@ -186,7 +186,13 @@ const ListCompanyAdminsPage: React.FC = () => {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-1">
                           <Button variant="ghost" size="icon" asChild title="Editar Administrador">
-                            <Link to={`/company-admins/edit/${admin.id}`}><FilePenLine className="h-4 w-4" /></Link>
+                            <Link to={
+                                  // Se for o perfil do próprio utilizador, vai para a página de perfil
+                              admin.id === user?.id 
+                                ? '/edit-profile' 
+                              // Senão, vai para a página de gestão de admins (para o PlatformAdmin)
+                                : `/company-admins/edit/${admin.id}`
+                            }><FilePenLine className="h-4 w-4" /></Link>
                           </Button>
                           {admin.company?.id && (
                             <Button variant="ghost" size="icon" asChild title="Editar Empresa">
@@ -253,6 +259,36 @@ const ListCompanyAdminsPage: React.FC = () => {
                 Eliminar
               </button>
             )}
+            
+            {/* --- BLOCO DO RESET 2FA CORRIGIDO --- */}
+            {user.role === UserRole.PLATFORM_ADMIN && (
+              <button 
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                onClick={async () => {
+                  // CORREÇÃO: Usamos 'contextMenu.admin' em vez de 'user'
+                  const targetAdmin = contextMenu.admin!; 
+                  
+                  const message = `Tem a certeza que deseja DESATIVAR a proteção 2FA do utilizador:\n\nNome: ${targetAdmin.firstName} ${targetAdmin.lastName}\nEmail: ${targetAdmin.email}\n\nA conta ficará desprotegida até nova configuração.`;
+
+                  if(window.confirm(message)) {
+                    try {
+                      await adminReset2FA(targetAdmin.id);
+                      alert(`O 2FA de ${targetAdmin.firstName} foi removido com sucesso.`);
+                      
+                      // Fechar menu e atualizar lista (se necessário)
+                      setContextMenu({ ...contextMenu, visible: false });
+                      queryClient.invalidateQueries({ queryKey: ['companyAdmins', companyId] });
+                    } catch (error) {
+                      alert("Erro ao fazer reset.");
+                    }
+                  }
+                }}
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>Reset 2FA</span>
+              </button>
+            )}
+
           </div>
         )}
 

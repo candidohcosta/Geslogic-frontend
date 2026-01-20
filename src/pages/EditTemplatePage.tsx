@@ -90,7 +90,7 @@ useEffect(() => {
     setSubject('');
     setBody('');
     setType('');
-    setCompanyId(user?.role === UserRole.PLATFORM_ADMIN ? 'platform' : user?.companyId || '');
+    setCompanyId(user?.role === UserRole.PLATFORM_ADMIN ? 'platform' : user?.company?.id || '');
     setIncludeSignature(true);
   }
 }, [templateData, isEditing, user]); // O efeito reage a mudanças nestas 3 variáveis
@@ -162,7 +162,7 @@ useEffect(() => {
   if (isLoadingTemplate) return <div>A carregar template...</div>;
 
 const isAdmin = user?.role === UserRole.COMPANY_ADMIN;
-const isOwnedByAdmin = isAdmin && templateData?.company?.id === user?.companyId;
+const isOwnedByAdmin = isAdmin && templateData?.company?.id === user?.company?.id;
 const isPlatformAdmin = user?.role === UserRole.PLATFORM_ADMIN;
 
   return (
@@ -194,7 +194,7 @@ const isPlatformAdmin = user?.role === UserRole.PLATFORM_ADMIN;
   disabled={isEditing}
 >
                 <SelectTrigger><SelectValue placeholder="Selecione o tipo..." /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[300px] overflow-y-auto">
                   {filteredEmailTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                 </SelectContent>
               </Select>

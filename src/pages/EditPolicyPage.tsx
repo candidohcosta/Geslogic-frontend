@@ -156,8 +156,8 @@ const isFormValid = useMemo(() => {
       // --- AQUI ESTÁ A CORREÇÃO PARA O 'companyId' (integrada na tua lógica) ---
       // Se estamos a CRIAR uma política E o utilizador é um Company Admin,
       // adicionamos o companyId para que o backend possa validar.
-      if (!isEditing && user?.role === UserRole.COMPANY_ADMIN && user.companyId) {
-        finalPolicyDataToSend = { ...finalPolicyDataToSend, companyId: user.companyId };
+      if (!isEditing && user?.role === UserRole.COMPANY_ADMIN && user.company?.id) {
+        finalPolicyDataToSend = { ...finalPolicyDataToSend, companyId: user.company?.id };
       }
       // Se for Platform Admin e tiver especificado um companyId no formulário,
       // o que faríamos com um Select de empresas (funcionalidade ainda por adicionar)
@@ -191,11 +191,11 @@ const isFormValid = useMemo(() => {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-1.5">
-          <Label htmlFor="name">Nome da Política</Label>
+          <Label htmlFor="name">Nome da Política <span className="text-red-500">*</span></Label>
           <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="consentText">Texto de Consentimento</Label>
+          <Label htmlFor="consentText">Texto de Consentimento <span className="text-red-500">*</span></Label>
           <Textarea id="consentText" value={consentText} onChange={(e) => setConsentText(e.target.value)} />
         </div>
 {/* +++ AQUI ESTÁ O NOVO SELECT PARA A EMPRESA +++ */}
@@ -221,7 +221,7 @@ const isFormValid = useMemo(() => {
 )}
 {/* --- FIM DO NOVO SELECT --- */}        
         <div className="grid gap-1.5">
-          <Label>Documento PDF</Label>
+          <Label>Documento PDF <span className="text-red-500">*</span></Label>
           <SingleFileUpload
             ownerType="PolicyDocument"
             ownerId={isEditing ? (policyId!) : tempOwnerId} // Usa um ID temporário se estiver a criar
@@ -241,6 +241,11 @@ const isFormValid = useMemo(() => {
         </div>
       </CardContent>
       <CardFooter className="justify-end space-x-2">
+        <div className="flex-grow text-sm text-muted-foreground mr-4 text-left">
+          {isEditing 
+            ? 'Campos com * são obrigatórios.' 
+            : 'Todos os campos são obrigatórios para criar uma nova política.'}
+        </div>
         <Button variant="outline" onClick={() => navigate(-1)}>Cancelar</Button>
         <Button onClick={handleSubmit} disabled={isPending || !isFormValid}>
           {isPending ? 'A Guardar...' : (isEditing ? 'Guardar Alterações' : 'Criar Política')}

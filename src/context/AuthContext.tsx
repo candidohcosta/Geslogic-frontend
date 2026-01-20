@@ -1,4 +1,4 @@
-// src/context/AuthContext.tsx (VERSÃO FINAL E OTIMIZADA)
+// src/context/AuthContext.tsx (VERSÃO FINAL E CONSOLIDADA)
 
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
 import { UserData } from '../types/user';
@@ -10,6 +10,8 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
+  // ADICIONADO: Necessário para o componente TwoFactorSetup atualizar o estado
+  refreshProfile: () => Promise<void>; 
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -18,37 +20,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // A função de logout continua perfeita
+  // 1. LOGOUT (A TUA LÓGICA ORIGINAL)
   const logout = useCallback(async () => {
-    // A lógica interna continua a mesma
     const userIsLoggedIn = !!localStorage.getItem('user');
     if (userIsLoggedIn) {
       try { await logoutUser(); } catch (error) { console.error("Logout failed:", error); }
     }
+    // Limpeza manual de cookies (Belt and Suspenders approach)
     document.cookie = "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    document.cookie = "refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=api/auth/refresh;";
+    document.cookie = "refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=auth/refresh;";
 
     localStorage.removeItem('user');
     setUser(null);
   }, []);
 
+  // 2. LOGIN (A TUA LÓGICA ORIGINAL)
+  const login = (userData: UserData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  // 3. REFRESH PROFILE (NOVA FUNCIONALIDADE)
+  // Permite recarregar os dados do utilizador (ex: flags 2FA) sem fazer F5
+  const refreshProfile = useCallback(async () => {
+    try {
+      const userData = await fetchUserProfile();
+      // Atualizamos o estado e o localStorage para manter coerência
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+    } catch (error) {
+      console.error("Erro ao atualizar perfil:", error);
+      // Opcional: Se falhar a atualização do perfil (token inválido), 
+      // podemos não fazer nada ou fazer logout. 
+      // Por segurança, deixamos quieto para não interromper a UX se for só uma falha de rede.
+    }
+  }, []);
+
+  // 4. EFFECTS (A TUA LÓGICA ORIGINAL)
   useEffect(() => {
-
-/*
-    // A verificação da sessão no arranque é a "fonte da verdade"
-    const postLoginUser = localStorage.getItem('post_login_user');
-     if (postLoginUser) {
-      // Se encontrámos estes dados, significa que acabámos de ser redirecionados.
-      // Usamos estes dados para o estado inicial e limpamos o item.
-      setUser(JSON.parse(postLoginUser));
-      localStorage.setItem('user', postLoginUser); // Move para o item 'user' normal
-      localStorage.removeItem('post_login_user');
-      setIsLoading(false);
-      return; // Pára a execução aqui
-    } */
-
-
-
     const checkUserSession = async () => {
       try {
         const userData = await fetchUserProfile();
@@ -63,19 +72,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
     checkUserSession();
 
-    // O listener apanha os 401s que acontecem depois do arranque
+    // O listener apanha os 401s que acontecem depois do arranque (Interceptor)
     const handleUnauthorized = () => logout();
     addUnauthorizedListener(handleUnauthorized);
 
   }, [logout]);
 
-  // A função de login apenas atualiza o estado. O redirecionamento é responsabilidade da UI.
-  const login = (userData: UserData) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
+  const value = { 
+    user, 
+    login, 
+    logout, 
+    isAuthenticated: !!user, 
+    isLoading,
+    refreshProfile // Exportamos a nova função
   };
-
-  const value = { user, login, logout, isAuthenticated: !!user, isLoading };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

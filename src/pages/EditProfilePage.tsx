@@ -1,4 +1,4 @@
-// frontend/src/pages/EditProfilePage.tsx (VERSÃO FINAL E COM EDIÇÃO)
+// frontend/src/pages/EditProfilePage.tsx (COM MÓDULO DE SEGURANÇA 2FA)
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -10,11 +10,12 @@ import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/Card';
+import { TwoFactorSetup } from '../components/auth/TwoFactorSetup'; // <--- 1. IMPORTAR
 
 const EditProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { login } = useAuth(); // Usamos 'login' para atualizar o contexto
+  const { login } = useAuth(); 
 
   const [formData, setFormData] = useState({ firstName: '', lastName: '' });
 
@@ -26,20 +27,14 @@ const EditProfilePage: React.FC = () => {
   const { mutate: updateProfileMutate, isPending, isSuccess, error: updateError } = useMutation({
     mutationFn: updateUserProfile,
     onSuccess: (updatedUserData) => {
-      // 1. ATUALIZA O ESTADO GLOBAL no AuthContext
       login(updatedUserData);
-      
-      // 2. Invalida a query local desta página
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      
-      // 3. ATIVA O REDIRECIONAMENTO APÓS 2 SEGUNDOS
       setTimeout(() => {
         navigate('/dashboard');
       }, 2000);
     },
   });
 
-  // 3. Efeito para popular o formulário quando os dados chegam da API
   useEffect(() => {
     if (userProfile) {
       setFormData({
@@ -84,14 +79,17 @@ const EditProfilePage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-grow flex items-center justify-center p-4">
+      {/* 2. ALTERADO PARA FLEX-COL E GAP-6 PARA EMPILHAR OS CARTÕES */}
+      <div className="flex-grow flex flex-col items-center justify-center p-4 gap-6">
+        
+        {/* CARTÃO 1: DADOS PESSOAIS */}
         <Card className="w-full max-w-xl">
           <CardHeader>
-            <CardTitle>Editar Perfil</CardTitle>
-            <CardDescription>Atualize os seus dados pessoais.</CardDescription>
+            <CardTitle>Dados Pessoais</CardTitle>
+            <CardDescription>Atualize o seu nome e informações de conta.</CardDescription>
           </CardHeader>
           <CardContent>
-            {updateError && <div className="p-3 mb-4 ...">{(updateError as Error).message}</div>}
+            {updateError && <div className="p-3 mb-4 text-sm text-red-600 bg-red-50 rounded">{(updateError as Error).message}</div>}
             
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
               <div className="grid gap-1.5">
@@ -104,7 +102,7 @@ const EditProfilePage: React.FC = () => {
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" value={userProfile?.email || ''} disabled />
+                <Input id="email" value={userProfile?.email || ''} disabled className="bg-gray-100" />
               </div>
               <Button type="submit" className="w-full" disabled={isPending}>
                 {isPending ? 'A Guardar...' : 'Guardar Alterações'}
@@ -115,10 +113,15 @@ const EditProfilePage: React.FC = () => {
             <Button variant="outline" className="w-full" onClick={() => navigate(-1)}>Voltar</Button>
           </CardFooter>
         </Card>
+
+        {/* CARTÃO 2: SEGURANÇA (2FA) */}
+        <div className="w-full max-w-xl">
+            <TwoFactorSetup />
+        </div>
+
       </div>
     </>
   );
 };
 
 export default EditProfilePage;
-// frontend/src/services/api.ts (VERSÃO FINAL E COM EDIÇÃO)

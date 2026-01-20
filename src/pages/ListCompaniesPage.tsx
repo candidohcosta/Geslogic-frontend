@@ -20,7 +20,7 @@ import {
   TableRow,
   TableCell,
 } from "../components/ui/Table";
-import { FilePenLine, Mail, Users, Ban, Trash2, LayoutDashboard, Copy} from 'lucide-react';
+import { FilePenLine, Mail, Users, Ban, Trash2, LayoutDashboard, Copy, CreditCard} from 'lucide-react';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 
 
@@ -266,6 +266,12 @@ return (
         <FilePenLine className="h-4 w-4" />
       </Link>
     </Button>
+{/* Botão Configuração Financeira */}
+                        <Button variant="ghost" size="icon" asChild title="Configurar Pagamentos">
+                          <Link to={`/companies/payment-config/${company.id}`}>
+                            <CreditCard className="h-4 w-4" />
+                          </Link>
+                        </Button>    
     {/* Link para Editar homepage*/}
     <Button variant="ghost" size="icon" asChild title="Editar Homepage da Empresa">
       <Link to={`/companies/homepage/edit/${company.id}`}>
@@ -341,18 +347,51 @@ return (
         >
           <Link
             to={`/companies/edit/${contextMenu.company.id}`} // <-- NOVO LINK
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
             onClick={() => setContextMenu({ ...contextMenu, visible: false })}
           >
+            <FilePenLine className="h-4 w-4" />
             Editar
           </Link>
+          <Link 
+              to={`/companies/payment-config/${contextMenu.company.id}`}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+            >
+              <CreditCard className="h-4 w-4" />
+              Config. Pagamentos
+            </Link>          
           <Link
             to={`/companies/homepage/edit/${contextMenu.company.id}`} // <-- NOVO LINK
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
             onClick={() => setContextMenu({ ...contextMenu, visible: false })}
           >
+            <LayoutDashboard className="h-4 w-4" />
             Editar página inicial
           </Link>
+
+          {/* Nova opção para ver administradores */}
+          <Link 
+            to={`/company-admins/list/${contextMenu.company.id}`}
+            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+            onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
+          >
+            <Users className="h-4 w-4" />
+            Administradores
+          </Link>
+          
+          {/* Opção para configurar SMTP, visível apenas para Platform Admin */}
+          {user?.role === UserRole.PLATFORM_ADMIN && (
+            <Link
+              to={`/companies/smtp-config/${contextMenu.company.id}`}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
+            >
+              <Mail className="h-4 w-4" />
+              Configurar SMTP
+            </Link>
+          )}
+          {user?.role === UserRole.PLATFORM_ADMIN && (
             <button
               onClick={
                 contextMenu.company.isActive
@@ -362,24 +401,7 @@ return (
               className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
             >
               {contextMenu.company.isActive ? 'Desativar' : 'Ativar'}
-            </button>
-          {/* Nova opção para ver administradores */}
-          <Link 
-            to={`/company-admins/list/${contextMenu.company.id}`}
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
-          >
-            Administradores
-          </Link>
-          {/* Opção para configurar SMTP, visível apenas para Platform Admin */}
-          {user?.role === UserRole.PLATFORM_ADMIN && (
-            <Link
-              to={`/companies/smtp-config/${contextMenu.company.id}`}
-              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-              onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
-            >
-              Configurar SMTP
-            </Link>
+            </button>          
           )}
           {/* NOVO: Opção para Eliminar empresa, visível apenas para Platform Admin */}
           {user?.role === UserRole.PLATFORM_ADMIN && (

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchCompanyDetails, updateCompany, fetchLocationByPostalCode } from '../services/api';
+import { fetchCompanyDetails, updateCompany, fetchLocationByPostalCode, checkCompanyMonitoring, toggleCompanyMonitoring } from '../services/api';
 import { UserData, UserRole } from '../types/user';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -12,11 +12,17 @@ import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
 import RichTextEditor from '../components/ui/RichTextEditor';
 import { FilePurpose } from '../types/file';
+import { Checkbox } from '../components/ui/Checkbox';
+import { SubscribedService } from '../types/company';
+import { translateServiceName } from '../lib/translations';
+import { BellRing, Smartphone, ShieldCheck  } from 'lucide-react';
+import { KioskQRCode } from '../components/kiosk/KioskQRCode';
 
 interface CompanyData {
   id: string; name: string; slug: string; email: string; nif: string; address?: string;
   postalCode?: string; locality?: string; phone?: string; defaultSignatureHtml?: string | null;
-  isActive: boolean; createdAt: string; updatedAt: string;
+  isActive: boolean; createdAt: string; updatedAt: string; subscribedServices: SubscribedService[];
+  forceTwoFactorForOperators: boolean;
 }
 
 const CompanyEditPage: React.FC = () => {
@@ -26,6 +32,8 @@ const CompanyEditPage: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [isEditing, setIsEditing] = useState(false);
+
+  const [isMonitored, setIsMonitored] = useState(false);
   
   // O formData agora é inicializado com 'null'
   const [formData, setFormData] = useState<Partial<CompanyData> | null>(null);
@@ -33,13 +41,13 @@ const CompanyEditPage: React.FC = () => {
   // +++ A NOSSA LÓGICA DE DEPURAÇÃO +++
   console.log("--- Depuração CompanyEditPage ---");
   console.log("ID dos parâmetros do URL (companyIdFromParams):", companyIdFromParams);
-  console.log("ID do utilizador logado (user.companyId):", user?.companyId);
+  console.log("ID do utilizador logado (user.companyId):", user?.company?.id);
   console.log("ID do utilizador logado (useParams<{ companyId?: string }>()):", useParams<{ companyId?: string }>());
 
   // A FONTE DA VERDADE PARA O ID
   // Se o URL tiver um ID, ele tem prioridade (ex: PlatformAdmin a editar uma empresa específica).
   // Se não, usamos o ID do CompanyAdmin logado.
-  const companyId = companyIdFromParams || user?.companyId;
+  const companyId = companyIdFromParams || user?.company?.id;
 
   console.log("ID final a ser usado na query:", companyId);
   console.log("---------------------------------");
@@ -61,13 +69,46 @@ const CompanyEditPage: React.FC = () => {
     },
   });
 
+  const [subscribedServices, setSubscribedServices] = useState<Set<string>>(new Set());
+
   // Este useEffect tem a única responsabilidade de preencher o formulário
   // com os dados da API quando eles chegam.
   useEffect(() => {
     if (companyDetails) {
       setFormData(companyDetails);
+      setSubscribedServices(new Set(companyDetails.subscribedServices || []));
     }
   }, [companyDetails]);
+
+  useEffect(() => {
+    if (companyDetails && user?.role === UserRole.PLATFORM_ADMIN && companyDetails.id) {
+        checkCompanyMonitoring(companyDetails.id)
+            .then(data => setIsMonitored(data.isMonitoring))
+            .catch(err => console.error("Erro ao verificar monitorização:", err));
+    }
+  }, [companyDetails, user]);  
+
+  const handleToggleMonitoring = async (checked: boolean) => {
+    setIsMonitored(checked);
+    try {
+        await toggleCompanyMonitoring(companyId!);
+    } catch (e) {
+        setIsMonitored(!checked); 
+        alert("Erro ao alterar monitorização.");
+    }
+  };
+
+  const handleServiceToggle = (service: SubscribedService) => {
+    setSubscribedServices(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(service)) {
+        newSet.delete(service);
+      } else {
+        newSet.add(service);
+      }
+      return newSet;
+    });
+  };
 
   const handleInputChange = (e: { target: { name: string, value: any } }) => {
     setFormData(prev => prev ? { ...prev, [e.target.name]: e.target.value } : null);
@@ -89,10 +130,19 @@ const CompanyEditPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyId || !formData) return;
-    const dataToSend = { email: formData.email, address: formData.address, postalCode: formData.postalCode, locality: formData.locality, phone: formData.phone, defaultSignatureHtml: formData.defaultSignatureHtml };
+    const dataToSend = { 
+      email: formData.email,
+      address: formData.address,
+      postalCode: formData.postalCode,
+      locality: formData.locality,
+      phone: formData.phone,
+      defaultSignatureHtml: formData.defaultSignatureHtml,
+      subscribedServices: Array.from(subscribedServices),
+      forceTwoFactorForOperators: formData.forceTwoFactorForOperators
+    };
     updateCompanyMutate({ companyId, companyData: dataToSend });
   };
 
@@ -102,6 +152,8 @@ const CompanyEditPage: React.FC = () => {
     }
     setIsEditing(prevState => !prevState);
   };
+
+  const isQueuesSubscribed = formData?.subscribedServices?.includes(SubscribedService.QUEUES);
 
   if (!user || (user.role !== UserRole.PLATFORM_ADMIN  && user.role !== UserRole.COMPANY_ADMIN)) return <Navigate to="/dashboard" />;
   
@@ -157,7 +209,88 @@ const CompanyEditPage: React.FC = () => {
                   />
                 </div>
               </div>
+            </div> 
+{/* --- BLOCO NOVO: POLÍTICA DE SEGURANÇA --- */}
+            <div className="mt-6 p-4 border border-gray-200 bg-gray-50 rounded-lg">
+                <h3 className="flex items-center gap-2 text-gray-900 font-semibold mb-2">
+                    <ShieldCheck className="w-5 h-5" />
+                    Segurança Operacional
+                </h3>
+                <div className="flex items-start space-x-2">
+                    <Checkbox 
+                        id="force2fa" 
+                        checked={formData.forceTwoFactorForOperators || false}
+                        onCheckedChange={(checked) => handleInputChange({ target: { name: 'forceTwoFactorForOperators', value: checked } })}
+                        disabled={!isEditing}
+                        className="mt-1"
+                    />
+                    <div>
+                      <Label htmlFor="force2fa" className="font-medium cursor-pointer text-gray-800">
+                          Obrigar Operadores a usar Dupla Autenticação
+                      </Label>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Se ativo, qualquer operador desta empresa receberá um código de verificação no email sempre que tentar iniciar sessão.
+                      </p>
+                    </div>
+                </div>
             </div>            
+            {/* --- BLOCO NOVO: SUPERVISÃO TÉCNICA (SÓ PLATFORM ADMIN) --- */}
+            {user?.role === UserRole.PLATFORM_ADMIN && isEditing && (
+                <div className="mt-6 p-4 border border-blue-200 bg-blue-50 rounded-lg">
+                    <h3 className="flex items-center gap-2 text-blue-900 font-semibold mb-2">
+                        <BellRing className="w-5 h-5" />
+                        Supervisão Técnica
+                    </h3>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id="monitoring" 
+                            checked={isMonitored}
+                            onCheckedChange={(c) => handleToggleMonitoring(c as boolean)}
+                        />
+                        <Label htmlFor="monitoring" className="font-medium cursor-pointer text-blue-800">
+                            Receber notificações de falhas desta empresa (Quiosques/Displays Offline)
+                        </Label>
+                    </div>
+                </div>
+            )}            
+            {user?.role === UserRole.PLATFORM_ADMIN && (
+              <div className="grid w-full items-center gap-1.5 pt-4 border-t">
+                <Label className="font-semibold">Módulos Subscritos</Label>
+                <div className="space-y-2 p-4">
+                  {Object.values(SubscribedService).map((service) => (
+                    <div key={service} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`service-${service}`}
+                        checked={subscribedServices.has(service)}
+                        onCheckedChange={() => handleServiceToggle(service)}
+                        disabled={!isEditing}
+                      />
+                      <Label htmlFor={`service-${service}`} className={`font-normal ${!isEditing ? 'text-muted-foreground' : ''}`}>{translateServiceName(service)}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>            
+            )}
+            {/* --- NOVO BLOCO: QR CODE GLOBAL (SÓ SE SUBSCRITO) --- */}
+            {companyDetails && isQueuesSubscribed && (
+              <CardHeader className="pt-0">
+                <CardTitle className="mt-4 flex items-center gap-2 border-t pt-4">
+                  <Smartphone className="w-5 h-5" />
+                  Acesso Móvel Global
+                </CardTitle>
+                <CardDescription>
+                  Este QR Code dá acesso a **todos** os serviços de fila abertos desta empresa.
+                </CardDescription>
+                <CardContent className="flex justify-center pt-6">
+                  <KioskQRCode 
+                    companySlug={companyDetails.slug} 
+                    kioskName={`Todos os Serviços (${companyDetails.name})`}
+                    // kioskId não é passado para ser o QR Code Global
+                  />
+                </CardContent>
+              </CardHeader>
+            )}
+            {/* ---------------------------------------------------- */}
             {isEditing && (
               <Button type="submit" className="w-full" disabled={isPending}>
                 {isPending ? 'A Guardar...' : 'Guardar Alterações'}

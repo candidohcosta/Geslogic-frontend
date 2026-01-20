@@ -1,0 +1,19 @@
+// src/types/queue.ts
+
+/* export enum TicketStatus {
+  WAITING = 'WAITING',
+  CALLED = 'CALLED',
+  IN_SERVICE = 'IN_SERVICE',
+  COMPLETED = 'COMPLETED',
+  ABSENT = 'ABSENT',
+  TRANSFERRED = 'TRANSFERRED',
+} */
+
+export enum TicketStatus {
+  WAITING = 'EM ESPERA',
+  CALLED = 'CHAMADA',
+  IN_SERVICE = 'EM SERVIÇO',
+  COMPLETED = 'FINALIZADO',
+  ABSENT = 'AUSÊNCIA',
+  TRANSFERRED = 'TRANSFERIDO',
+}

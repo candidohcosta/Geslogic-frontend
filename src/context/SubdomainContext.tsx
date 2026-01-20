@@ -3,13 +3,13 @@
 import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
 import { getCompanySlugFromHostname } from '../lib/routing';
 
-interface CompanyContextType {
+interface SubdomainContextType {
   companySlug: string | null;
 }
 
-const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
+const SubdomainContext = createContext<SubdomainContextType | undefined>(undefined);
 
-export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const SubdomainProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Analisamos o hostname APENAS UMA VEZ, quando o provider é criado.
   const [companySlug] = useState(() => getCompanySlugFromHostname(window.location.hostname));
 
@@ -17,15 +17,15 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
   const value = useMemo(() => ({ companySlug }), [companySlug]);
 
   return (
-    <CompanyContext.Provider value={value}>
+    <SubdomainContext.Provider value={value}>
       {children}
-    </CompanyContext.Provider>
+    </SubdomainContext.Provider>
   );
 };
 
 // Hook personalizado para usar o contexto
-export const useCompany = () => {
-  const context = useContext(CompanyContext);
+export const useSubdomain = () => {
+  const context = useContext(SubdomainContext);
   if (context === undefined) {
     throw new Error('useCompany must be used within a CompanyProvider');
   }

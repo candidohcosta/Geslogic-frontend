@@ -72,7 +72,7 @@ const PolicyDocumentsPage: React.FC = () => {
   // Helper para verificar se o utilizador pode editar/apagar esta política específica
   const canManagePolicy = (policy: PolicyData) => {
     if (user?.role === UserRole.PLATFORM_ADMIN) return true;
-    if (user?.role === UserRole.COMPANY_ADMIN && policy.company?.id === user.companyId) return true;
+    if (user?.role === UserRole.COMPANY_ADMIN && policy.company?.id === user.company?.id) return true;
     return false;
   };
   
@@ -80,7 +80,7 @@ const PolicyDocumentsPage: React.FC = () => {
     // Um Company Admin pode ver documentos das políticas da plataforma ou da sua empresa
     // Um Platform Admin pode ver tudo
     if (user?.role === UserRole.PLATFORM_ADMIN) return true;
-    if (user?.role === UserRole.COMPANY_ADMIN && (!policy.company || policy.company?.id === user.companyId)) return true;
+    if (user?.role === UserRole.COMPANY_ADMIN && (!policy.company || policy.company?.id === user.company?.id)) return true;
     return false;
   };
 

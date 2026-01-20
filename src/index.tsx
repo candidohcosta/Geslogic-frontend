@@ -4,17 +4,20 @@ import { BrowserRouter } from 'react-router-dom'; // 1. Importar o BrowserRouter
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import { TelemetryService } from './lib/telemetry';
 import { Quill } from 'react-quill-new';
 window.Quill = Quill;
+
+TelemetryService.initErrorCapture();
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
+    {/* <BrowserRouter> */}
       <App />
-    </BrowserRouter>
+    {/* </BrowserRouter> */}
   </React.StrictMode>
 );
 

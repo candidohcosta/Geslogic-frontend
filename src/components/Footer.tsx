@@ -5,6 +5,8 @@ const Footer: React.FC = () => {
   return (
     <footer className="bg-gray-800 text-white p-6 mt-auto">
       <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+{/*      <footer className="w-full bg-white p-4 border-t mt-8 flex-shrink-0"> 
+         <div className="container mx-auto text-center text-sm text-gray-500">    */} 
         <div>
           <h3 className="text-lg font-bold mb-2">GesLogic</h3>
           <p className="text-gray-400 text-sm">A sua solução completa para gestão de eventos e participantes.</p>

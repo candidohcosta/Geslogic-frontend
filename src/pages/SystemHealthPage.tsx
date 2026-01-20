@@ -1,190 +1,391 @@
-// frontend/src/pages/SystemHealthPage.tsx (VERSÃO COMPLETA)
+// frontend/src/pages/SystemHealthPage.tsx
 
 import React from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query'; // Usamos useMutation para uma ação "a pedido"
-import { checkFileSystemConsistency, cleanOrphanFiles, cleanOrphanRecords, cleanFunctionallyOrphanRecords   } from '../services/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'; 
+import { 
+  checkFileSystemConsistency, 
+  cleanOrphanFiles, 
+  cleanOrphanRecords, 
+  cleanFunctionallyOrphanRecords   
+} from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Loader2, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Loader2, ShieldCheck, ShieldAlert, RefreshCw, HardDrive, Database, Activity, Cpu, MailWarning } from 'lucide-react';
 
-
-// Interfaces para a "forma" da resposta da API
-interface LastKnownAction {
-  action: string;
-  message: string;
-  timestamp: string;
-}
-interface OrphanOwnerRecord {
-  fileId: string;
-  fileName: string;
-  orphanOwnerId: string;
-  ownerType: string;
-  lastKnownAction: LastKnownAction | null;
-}
+// --- INTERFACES ---
 interface OrphanRecord {
   id: string;
   displayName: string;
   storageFileName: string;
   uploadedBy: string;
 }
+
 interface ConsistencyCheckResult {
-  diskCheck: {
-    totalFiles: number;
-    orphanCount: number;
-    orphanFiles: string[];
+  diskCheck: { totalFiles: number; orphanCount: number; orphanFiles: string[]; };
+  databaseCheck: { totalRecords: number; orphanCount: number; orphanRecords: OrphanRecord[]; };
+  functionalOrphanCheck: { orphanCount: number; orphanRecords: any[]; };
+  apiHealth: { uptimePercent: string; status: 'HEALTHY' | 'UNSTABLE'; };
+  serverResources: {
+    memory: { total: string; used: string; percent: string; };
+    database: { size: string; };
+    storage: { used: string; free: string; }; // <--- AJUSTADO
+    uptime: string;
+    cpuCount: number;
+    platform: string;
   };
-  databaseCheck: {
-    totalRecords: number;
-    orphanCount: number;
-    orphanRecords: OrphanRecord[];
+  stability: {
+    recentErrors: number;
+    latency: string;
+    activeSockets: { kiosks: number, displays: number, total: number };
+    status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
   };
-  ownerLinkCheck: { 
-    orphanCount: number;
-    orphanRecords: OrphanOwnerRecord[];
-  };
-  functionalOrphanCheck: {
-    orphanCount: number;
-    orphanRecords: any[];
-  };
-  isConsistent: boolean;
+  advanced: {
+    cpuLoad: string;
+    dbConnections: number;
+    mailErrors: number;
+    failedLogins: number;
+  };  
+  isConsistent: boolean;  
 }
 
 const SystemHealthPage: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { mutate: runCheck, data, error, isPending, isIdle } = useMutation<ConsistencyCheckResult, Error>({
-    mutationFn: checkFileSystemConsistency,
+  // 1. CARREGAMENTO AUTOMÁTICO (useQuery em vez de useMutation)
+  const { data, isLoading, error, refetch } = useQuery<ConsistencyCheckResult, Error>({
+    queryKey: ['systemHealth'],
+    queryFn: checkFileSystemConsistency,
   });
 
-  // +++ NOVAS MUTAÇÕES PARA AS AÇÕES DE LIMPEZA +++
+  // 2. MUTAÇÕES DE LIMPEZA
   const { mutate: runCleanFiles, isPending: isCleaningFiles } = useMutation({
     mutationFn: cleanOrphanFiles,
-    onSuccess: () => runCheck(), // Após a limpeza, corre a verificação novamente
+    onSuccess: () => refetch(),
   });
 
   const { mutate: runCleanRecords, isPending: isCleaningRecords } = useMutation({
     mutationFn: cleanOrphanRecords,
-    onSuccess: () => runCheck(),
+    onSuccess: () => refetch(),
   });
 
   const { mutate: runCleanFunctionalOrphans, isPending: isCleaningFunctional } = useMutation({
     mutationFn: cleanFunctionallyOrphanRecords,
-    onSuccess: () => runCheck(),
+    onSuccess: () => refetch(),
   });
-
 
   if (!user) return <Navigate to="/login" />;
 
-  const isConsistent = data && data.diskCheck.orphanCount === 0 && data.databaseCheck.orphanCount === 0 && data.functionalOrphanCheck.orphanCount === 0;
+  // Lógica de Consistência Global
+  const isConsistent = data && 
+    data.diskCheck.orphanCount === 0 && 
+    data.databaseCheck.orphanCount === 0 && 
+    data.functionalOrphanCheck.orphanCount === 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Verificação de Consistência do Sistema</CardTitle>
-        <CardDescription>
-          Auditoria da integridade entre os ficheiros guardados no disco e os registos na base de dados.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="text-center">
-          <Button onClick={() => runCheck()} disabled={isPending}>
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isPending ? 'A verificar...' : 'Iniciar Verificação'}
-          </Button>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Saúde do Sistema</h1>
+          <p className="text-gray-500">Monitorização de integridade e disponibilidade.</p>
         </div>
+        <Button onClick={() => refetch()} disabled={isLoading} variant="outline">
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+          Atualizar Estado
+        </Button>
+      </div>
 
-        {/* Mostra os resultados APÓS a verificação */}
-        {!isIdle && !isPending && (
-          <div>
-            {error && <p className="text-red-500 text-center">Erro: {(error as Error).message}</p>}
-            
-            {data && (
-              <div className="space-y-4">
-                <div className={`p-4 rounded-lg flex items-center ${data.isConsistent ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                  {data.isConsistent ? <ShieldCheck className="h-5 w-5 mr-3" /> : <ShieldAlert className="h-5 w-5 mr-3" />}
-                  <span className="font-semibold">
-                    {data.isConsistent ? 'O sistema está consistente.' : 'Foram encontradas inconsistências.'}
-                  </span>
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center p-20 space-y-4">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="text-gray-500 animate-pulse">A realizar auditoria completa...</p>
+        </div>
+      ) : error ? (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-6 text-center text-red-700">
+            <ShieldAlert className="h-12 w-12 mx-auto mb-2" />
+            <p>Erro na verificação: {error.message}</p>
+          </CardContent>
+        </Card>
+      ) : data && (
+        <div className="space-y-6">
+          
+          {/* --- SECÇÃO 1: DISPONIBILIDADE DA API --- */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            <Card className="border-l-4 border-l-blue-500">
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Estado da API</p>
+                  <h3 className="text-2xl font-bold">Online</h3>
                 </div>
+                <Activity className="h-8 w-8 text-blue-500 animate-pulse" />
+              </CardContent>
+            </Card>
 
-                {/* +++ O NOSSO NOVO CONTENTOR DE GRELHA +++ */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className={`border-l-4 ${data.apiHealth.status === 'HEALTHY' ? 'border-l-green-500' : 'border-l-yellow-500'}`}>
+              <CardContent className="p-6">
+                <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Uptime (7 Dias)</p>
+                <h3 className={`text-2xl font-bold ${data.apiHealth.status === 'HEALTHY' ? 'text-green-600' : 'text-yellow-600'}`}>
+                  {data.apiHealth.uptimePercent}
+                </h3>
+              </CardContent>
+            </Card>
 
-                    {/* Relatório de Órfãos de Disco */}
-                    <Card>
-                        <CardHeader className="flex-row items-center justify-between">
-                            <CardTitle className="text-base">Ficheiros Órfãos no Disco ({data.diskCheck.orphanCount})</CardTitle>
-                            {data.diskCheck.orphanCount > 0 && (
-                            <Button variant="destructive" size="sm" onClick={() => runCleanFiles()} disabled={isCleaningFiles}>
-                                {isCleaningFiles ? 'A Limpar...' : 'Limpar Ficheiros'}
-                            </Button>
-                            )}
-                        </CardHeader>
-                    <CardContent>
-                        {data.diskCheck.orphanCount > 0 ? (
-                        <ul className="list-disc list-inside text-sm font-mono">
-                            {data.diskCheck.orphanFiles.map(file => <li key={file}>{file}</li>)}
-                        </ul>
-                        ) : <p className="text-sm text-muted-foreground">Nenhum ficheiro órfão encontrado.</p>}
-                    </CardContent>
-                    </Card>
-
-                    {/* Relatório de Órfãos de BD */}
-                    <Card>
-                    <CardHeader className="flex-row items-center justify-between">
-                        <CardTitle className="text-base">Registos Órfãos na BD ({data.databaseCheck.orphanCount})</CardTitle>
-                        {data.databaseCheck.orphanCount > 0 && (
-                        <Button variant="destructive" size="sm" onClick={() => runCleanRecords()} disabled={isCleaningRecords}>
-                            {isCleaningRecords ? 'A Limpar...' : 'Limpar Registos'}
-                        </Button>
-                        )}
-                    </CardHeader>
-                    <CardContent>
-                        {data.databaseCheck.orphanCount > 0 ? (
-                        <ul className="space-y-2">
-                            {data.databaseCheck.orphanRecords.map(rec => (
-                            <li key={rec.id} className="text-sm p-2 bg-gray-50 rounded">
-                                <p className="font-mono"><strong>Nome:</strong> {rec.displayName}</p>
-                                <p className="text-xs text-muted-foreground font-mono">Ficheiro: {rec.storageFileName}</p>
-                                <p className="text-xs text-muted-foreground">Carregado por: {rec.uploadedBy}</p>
-                            </li>
-                            ))}
-                        </ul>
-                        ) : <p className="text-sm text-muted-foreground">Nenhum registo órfão encontrado.</p>}
-                    </CardContent>
-                    </Card>
-
+            <Card className="border-l-4 border-l-indigo-500">
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Base de Dados</p>
+                  <h3 className="text-2xl font-bold">Ligada</h3>
                 </div>
+                <Database className="h-8 w-8 text-indigo-500" />
+              </CardContent>
+            </Card>
 
-                {/* +++ O NOSSO NOVO CARD "FORENSE" +++ */}
-                <Card>
-                  <CardHeader className="flex-row items-center justify-between">
-                    <CardTitle className="text-base">Registos Não Utilizados ({data.functionalOrphanCheck.orphanCount})</CardTitle>
-                    {data.functionalOrphanCheck.orphanCount > 0 && <Button variant="destructive" size="sm" onClick={() => runCleanFunctionalOrphans()} disabled={isCleaningFunctional}>{isCleaningFunctional ? 'A Limpar...' : 'Limpar'}</Button>}
-                  </CardHeader>
-                  <CardContent>
-                    {data.functionalOrphanCheck.orphanCount > 0 ? (
-                      <ul className="space-y-2">
-                        {data.functionalOrphanCheck.orphanRecords.map((rec: any) => (
-                          <li key={rec.id} className="text-sm p-2 bg-gray-50 rounded">
-                            <p className="font-mono"><strong>Nome:</strong> {rec.displayName}</p>
-                            <p className="text-xs text-muted-foreground font-mono">Ficheiro: {rec.storageFileName}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : <p className="text-sm text-muted-foreground">Nenhum registo não utilizado encontrado.</p>}
-                  </CardContent>
-                </Card>
-
-              </div>
-            )}
+            {/* Erros 24h */}
+            <Card className={`border-l-4 ${data.stability.recentErrors > 0 ? 'border-l-red-500' : 'border-l-green-500'}`}>
+                <CardContent className="p-4 flex items-center justify-between">
+                    <div>
+                        <p className="text-xs text-muted-foreground uppercase font-bold">Erros (24h)</p>
+                        <h3 className={`text-2xl font-bold ${data.stability.recentErrors > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                            {data.stability.recentErrors}
+                        </h3>
+                    </div>
+                    <ShieldAlert className={`h-8 w-8 ${data.stability.recentErrors > 0 ? 'text-red-500' : 'text-green-500 opacity-20'}`} />
+                </CardContent>
+            </Card>            
           </div>
-        )}
-      </CardContent>
+
+
+{/* --- SECÇÃO 1.2: RECURSOS DO SERVIDOR (PREVENTIVO) --- */}
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-4">
+    {/* RAM */}
+    <Card className="bg-white">
+        <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase font-bold">Uso de Memória RAM</p>
+            <div className="flex items-end justify-between mt-2">
+                <h3 className="text-2xl font-bold">{data.serverResources.memory.percent}</h3>
+                <p className="text-xs text-gray-400">{data.serverResources.memory.used} / {data.serverResources.memory.total}</p>
+            </div>
+            {/* Barra de progresso visual */}
+            <div className="w-full bg-gray-100 h-2 rounded-full mt-2 overflow-hidden">
+                <div 
+                    className={`h-full transition-all ${parseFloat(data.serverResources.memory.percent) > 80 ? 'bg-red-500' : 'bg-blue-500'}`}
+                    style={{ width: data.serverResources.memory.percent }}
+                />
+            </div>
+        </CardContent>
     </Card>
+
+{/* Carga do CPU - Adaptado para Windows e Linux */}
+<Card className="bg-white">
+    <CardContent className="p-4 flex items-center justify-between">
+        <div>
+            <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Carga do CPU</p>
+            <h3 className="text-2xl font-bold mt-1">{data.advanced.cpuLoad}</h3>
+            <p className="text-[10px] text-gray-400">
+                {data.advanced.cpuLoad.includes('%') 
+                    ? 'Uso do recurso pela aplicação' 
+                    : 'Média de processamento (1m)'}
+            </p>
+        </div>
+        <Cpu className="h-8 w-8 text-blue-400 opacity-30" />
+    </CardContent>
+</Card>
+
+    {/* Tamanho da BD (Movemos o card de cima para aqui para alinhar as colunas se preferires) */}
+    <Card className="bg-white">
+        <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase font-bold">Base de Dados</p>
+            <h3 className="text-2xl font-bold mt-2">{data.serverResources.database.size}</h3>
+            <p className="text-xs text-gray-400">PostgreSQL Storage</p>
+        </CardContent>
+    </Card>
+
+    {/* Armazenamento de Ficheiros */}
+    <Card className="bg-white">
+        <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase font-bold">Arquivos de Media (Uploads)</p>
+            <h3 className="text-2xl font-bold mt-2">{data.serverResources.storage.used}</h3>
+            <p className="text-xs text-gray-400">Banners, Logos e Documentos</p>
+        </CardContent>
+    </Card>
+
+    {/* Espaço Livre em Disco */}
+    <Card className="bg-white">
+        <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase font-bold">Espaço Livre em Disco</p>
+            <h3 className="text-2xl font-bold mt-2">{data.serverResources.storage.free}</h3>
+            <p className="text-[10px] text-gray-400">Capacidade restante para uploads</p>
+        </CardContent>
+    </Card>
+</div>
+
+
+{/* --- SECÇÃO 1.2: ESTABILIDADE E REDE --- */}
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mt-4">
+    
+    {/* Conexões BD */}
+    <Card className="bg-white">
+        <CardContent className="p-4 flex items-center justify-between">
+            <div>
+                <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Conexões Ativas</p>
+                <h3 className="text-2xl font-bold mt-1 text-indigo-700">{data.advanced.dbConnections}</h3>
+                <p className="text-[10px] text-gray-400">Pontes abertas ao Postgres</p>
+            </div>
+            <Database className="h-8 w-8 text-indigo-400 opacity-30" />
+        </CardContent>
+    </Card>
+
+    {/* Latência */}
+    <Card className="bg-white">
+        <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase font-bold">Latência do Servidor</p>
+            <h3 className="text-2xl font-bold mt-2">{data.stability.latency}</h3>
+            <p className="text-xs text-gray-400">Tempo de resposta interno</p>
+        </CardContent>
+    </Card>
+
+    {/* WebSockets Ativos */}
+    <Card className="bg-white">
+        <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground uppercase font-bold">Dispositivos Ligados</p>
+            <div className="flex items-end justify-between mt-2">
+                <h3 className="text-2xl font-bold text-blue-600">{data.stability.activeSockets.total}</h3>
+                <div className="text-[10px] text-right text-gray-400 leading-tight">
+                    {data.stability.activeSockets.kiosks} Q<br/>
+                    {data.stability.activeSockets.displays} D
+                </div>
+            </div>
+        </CardContent>
+    </Card>
+
+    {/* Erros de Email */}
+    <Card className={`border-l-4 ${data.advanced.mailErrors > 0 ? 'border-l-red-500 bg-red-50/30' : 'bg-white'}`}>
+        <CardContent className="p-4 flex items-center justify-between">
+            <div>
+                <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Falhas de Email</p>
+                <h3 className={`text-2xl font-bold ${data.advanced.mailErrors > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                    {data.advanced.mailErrors}
+                </h3>
+                <p className="text-[10px] text-gray-400">Erros SMTP (24h)</p>
+            </div>
+            <MailWarning className={`h-8 w-8 ${data.advanced.mailErrors > 0 ? 'text-red-500' : 'text-gray-300'}`} />
+        </CardContent>
+    </Card>
+
+    {/* Alertas de Segurança */}
+    <Card className={`border-l-4 ${data.advanced.failedLogins > 5 ? 'border-l-red-600 bg-red-50' : data.advanced.failedLogins > 0 ? 'border-l-orange-500' : 'bg-white'}`}>
+        <CardContent className="p-4 flex items-center justify-between">
+            <div>
+                <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Logins Falhados</p>
+                <h3 className={`text-2xl font-bold ${data.advanced.failedLogins > 0 ? 'text-orange-600' : 'text-gray-900'}`}>
+                    {data.advanced.failedLogins}
+                </h3>
+                <p className="text-[10px] text-gray-400">Tentativas de acesso (24h)</p>
+            </div>
+            <ShieldAlert className={`h-8 w-8 ${data.advanced.failedLogins > 0 ? 'text-orange-500' : 'text-gray-300'}`} />
+        </CardContent>
+    </Card>
+</div>          
+
+          
+
+          {/* --- SECÇÃO 2: RESULTADO DA CONSISTÊNCIA --- */}
+          <Card className={isConsistent ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}>
+            <CardContent className="p-4 flex items-center gap-3">
+              {isConsistent ? <ShieldCheck className="h-6 w-6 text-green-600" /> : <ShieldAlert className="h-6 w-6 text-yellow-600" />}
+              <span className={`font-semibold ${isConsistent ? 'text-green-800' : 'text-yellow-800'}`}>
+                {isConsistent ? 'Todos os sistemas de ficheiros e dados estão sincronizados.' : 'Foram detetadas inconsistências que requerem atenção.'}
+              </span>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Relatório de Disco */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="h-5 w-5 text-gray-400" />
+                  <CardTitle className="text-base">Ficheiros no Disco</CardTitle>
+                </div>
+                {data.diskCheck.orphanCount > 0 && (
+                  <Button variant="destructive" size="sm" onClick={() => runCleanFiles()} disabled={isCleaningFiles}>
+                    Limpar
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="pt-4">
+                <p className="text-sm mb-4">Total detetado: <strong>{data.diskCheck.totalFiles}</strong></p>
+                {data.diskCheck.orphanCount > 0 ? (
+                  <ul className="space-y-1 max-h-40 overflow-y-auto">
+                    {data.diskCheck.orphanFiles.map(file => (
+                      <li key={file} className="text-xs font-mono bg-red-50 p-1 rounded text-red-700">{file}</li>
+                    ))}
+                  </ul>
+                ) : <p className="text-sm text-green-600 flex items-center gap-1"><ShieldCheck className="h-4 w-4" /> Sem ficheiros órfãos.</p>}
+              </CardContent>
+            </Card>
+
+            {/* Relatório de BD */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-2">
+                  <Database className="h-5 w-5 text-gray-400" />
+                  <CardTitle className="text-base">Registos na Base de Dados</CardTitle>
+                </div>
+                {data.databaseCheck.orphanCount > 0 && (
+                  <Button variant="destructive" size="sm" onClick={() => runCleanRecords()} disabled={isCleaningRecords}>
+                    Limpar
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="pt-4">
+                <p className="text-sm mb-4">Total de registos: <strong>{data.databaseCheck.totalRecords}</strong></p>
+                {data.databaseCheck.orphanCount > 0 ? (
+                  <ul className="space-y-2 max-h-40 overflow-y-auto">
+                    {data.databaseCheck.orphanRecords.map(rec => (
+                      <li key={rec.id} className="text-xs p-2 bg-yellow-50 rounded border border-yellow-100">
+                        <p className="font-bold">{rec.displayName}</p>
+                        <p className="text-gray-500 uppercase">{rec.uploadedBy}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-sm text-green-600 flex items-center gap-1"><ShieldCheck className="h-4 w-4" /> Sem registos órfãos.</p>}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Registos não utilizados (Forense) */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+              <CardTitle className="text-base">Limpeza de Ficheiros Não Utilizados</CardTitle>
+              {data.functionalOrphanCheck.orphanCount > 0 && (
+                <Button variant="destructive" size="sm" onClick={() => runCleanFunctionalOrphans()} disabled={isCleaningFunctional}>
+                  Apagar Tudo ({data.functionalOrphanCheck.orphanCount})
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground mb-4">
+                Ficheiros que existem no disco e na BD, mas que não estão ligados a nenhuma Empresa, Evento ou Assinatura.
+              </p>
+              {data.functionalOrphanCheck.orphanCount > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                  {data.functionalOrphanCheck.orphanRecords.map((rec: any) => (
+                    <div key={rec.id} className="text-[10px] p-2 bg-gray-50 rounded font-mono truncate">
+                      {rec.displayName}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-green-600">O sistema está limpo.</p>}
+            </CardContent>
+          </Card>
+
+        </div>
+      )}
+    </div>
   );
 };
 

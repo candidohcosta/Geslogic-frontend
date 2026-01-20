@@ -44,7 +44,7 @@ const UpcomingRegistrationsWidget: React.FC = () => {
         {registrations.length > 3 && (
           <div className="text-center mt-4">
             <Button variant="link" asChild>
-              <Link to="/app/my-registrations">Ver todas as inscrições...</Link>
+              <Link to="/my-registrations">Ver todas as inscrições...</Link>
             </Button>
           </div>
         )}

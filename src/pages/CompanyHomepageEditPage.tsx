@@ -31,7 +31,7 @@ const CompanyHomepageEditPage: React.FC = () => {
   });
 
   const [isCopied, copy] = useCopyToClipboard();
-  const publicUrl = `${window.location.protocol}//${companyDetails?.slug}.${process.env.REACT_APP_MAIN_DOMAIN}:${window.location.port}`;
+  //const publicUrl = `${window.location.protocol}//${companyDetails?.slug}.${process.env.REACT_APP_MAIN_DOMAIN}:${window.location.port}`;
 
   useEffect(() => {
     if (companyDetails) {
@@ -50,12 +50,20 @@ const CompanyHomepageEditPage: React.FC = () => {
     updateCompanyMutate({ companyId: companyId!, companyData: { aboutUsHtml } });
   };
 
+  const handleCopyLink = () => {
+    // 2. A LÓGICA AGORA VIVE AQUI DENTRO
+    if (companyDetails?.slug) {
+      const urlToCopy = `${window.location.protocol}//${companyDetails.slug}.${process.env.REACT_APP_MAIN_DOMAIN}:${window.location.port}`;
+      copy(urlToCopy);
+    }
+  };
+
   //if (!user || user.role !== UserRole.PLATFORM_ADMIN) return <Navigate to="/dashboard" />;
   if (!user) return <Navigate to="/login" />;
   if (
     user.role !== UserRole.PLATFORM_ADMIN &&
     // Permite o acesso se for um CompanyAdmin E o ID da empresa no URL for o mesmo do seu token
-    !(user.role === UserRole.COMPANY_ADMIN && user.companyId === companyId)
+    !(user.role === UserRole.COMPANY_ADMIN && user.company?.id === companyId)
   ) {
     return <Navigate to="/dashboard" />; // Ou para uma página de "acesso negado"
   }
@@ -67,7 +75,7 @@ const CompanyHomepageEditPage: React.FC = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Editar Homepage da Empresa: {companyDetails?.name}</h1>
         <div className="flex space-x-2">
-          <Button variant="outline" onClick={() => copy(publicUrl)}>
+          <Button variant="outline" onClick={handleCopyLink} disabled={!companyDetails?.slug}>
             {isCopied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
             {isCopied ? 'Copiado!' : 'Copiar Link Público'}
           </Button>

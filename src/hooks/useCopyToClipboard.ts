@@ -1,6 +1,6 @@
-// Em src/hooks/useCopyToClipboard.ts
+// src/hooks/useCopyToClipboard.ts
 
-import { useState } from "react";
+import { useState } from 'react';
 
 type CopyFn = (text: string) => Promise<boolean>;
 
@@ -8,27 +8,49 @@ export function useCopyToClipboard(): [boolean, CopyFn] {
   const [isCopied, setIsCopied] = useState(false);
 
   const copy: CopyFn = async (text) => {
-    // LOG 1: Vemos o que estamos a tentar copiar
-    console.log("Tentando copiar para o clipboard:", text);
-
-    if (!navigator?.clipboard) {
-      console.error("ERRO: navigator.clipboard não é suportado ou não está disponível.");
-      // Isto pode acontecer se o site não estiver a ser servido num contexto seguro (HTTPS ou localhost)
-      return false;
+    // 1. TENTA O MÉTODO MODERNO E SEGURO (navigator.clipboard)
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000); // Resetar o estado após 2s
+        return true;
+      } catch (error) {
+        console.warn('Falha ao usar navigator.clipboard. A tentar o método de fallback.', error);
+      }
     }
 
+    // 2. MÉTODO DE FALLBACK (para HTTP e navegadores antigos)
     try {
-      await navigator.clipboard.writeText(text);
-      console.log("SUCESSO: Texto copiado!");
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-      return true;
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      
+      // Evita que o ecrã "salte"
+      textArea.style.position = 'fixed';
+      textArea.style.top = '0';
+      textArea.style.left = '0';
+      textArea.style.opacity = '0';
+
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      
+      document.body.removeChild(textArea);
+
+      if (successful) {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000);
+        return true;
+      }
     } catch (error) {
-      // LOG 2: Vemos o erro exato
-      console.error("ERRO: A chamada a navigator.clipboard.writeText() falhou:", error);
-      setIsCopied(false);
-      return false;
+      console.error('Falha ao usar o método de fallback de cópia.', error);
     }
+
+    // Se ambos falharem
+    setIsCopied(false);
+    return false;
   };
 
   return [isCopied, copy];

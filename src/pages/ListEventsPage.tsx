@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { fetchEvents, deleteEvent } from '../services/api';
+import { fetchEvents, deleteEvent, fetchCompanies, cloneEvent } from '../services/api';
 import { UserData, UserRole } from '../types/user';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../components/ui/Table';
@@ -12,7 +12,8 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Label } from '../components/ui/Label';
-import { Eye, Users, FilePenLine, Trash2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select';
+import { Eye, Users, FilePenLine, Trash2, Building2, Copy } from 'lucide-react';
 
 export interface EventData {
   id: string;
@@ -50,11 +51,21 @@ const ListEventsPage: React.FC = () => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // NOVO: Estado para a pesquisa
 
-  // Hooks de dados (perfeitos como estavam)
+  // --- ESTADO DA EMPRESA SELECIONADA (NOVO) ---
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>(user?.company?.id || '');
+
+  // 1. BUSCAR EMPRESAS (Só Platform Admin)
+  const { data: companies } = useQuery({
+    queryKey: ['companies'],
+    queryFn: fetchCompanies,
+    enabled: user?.role === UserRole.PLATFORM_ADMIN,
+  });
+
+  // 2. BUSCAR EVENTOS (Depende da Empresa)
   const { data: events = [], isLoading, error } = useQuery<EventData[], Error>({
-    queryKey: ['events'],
-    queryFn: fetchEvents,
-    enabled: !!user, // Garante que só busca se houver utilizador
+    queryKey: ['events', selectedCompanyId], // <--- Chave reativa
+    queryFn: () => fetchEvents((selectedCompanyId === 'ALL' || !selectedCompanyId) ? undefined : selectedCompanyId),
+    enabled: !!user,
   });
 
   const deleteEventMutation = useMutation({
@@ -64,6 +75,15 @@ const ListEventsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       handleCloseDeleteModal();
     },
+  });
+
+  const { mutate: cloneMutation } = useMutation({
+    mutationFn: cloneEvent,
+    onSuccess: () => {
+        setSuccess('Evento clonado com sucesso!');
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+    },
+    onError: (e: any) => alert(e.message)
   });
 
   if (!user) return <Navigate to="/login" />;
@@ -81,6 +101,12 @@ const ListEventsPage: React.FC = () => {
       minute: '2-digit',
       hour12: false,
     });
+  };
+
+  const handleClone = (eventId: string) => {
+      if(window.confirm("Deseja duplicar este evento?")) {
+          cloneMutation(eventId);
+      }
   };
 
   // --- Funções para o Modal de Eliminação ---
@@ -128,11 +154,43 @@ const ListEventsPage: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="max-w-sm"
           />
-          {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-            <Button asChild>
-              <Link to="/events/create">Criar Novo Evento</Link>
-            </Button>
-          )}
+
+          <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+             {/* SELETOR DE EMPRESA (PLATFORM ADMIN) */}
+             {user?.role === UserRole.PLATFORM_ADMIN && (
+                <div className="w-full md:w-64">
+                    <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                        <SelectTrigger>
+                            <Building2 className="w-4 h-4 mr-2 text-gray-500" />
+                            <SelectValue placeholder="Todas as Empresas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="ALL">Todas as Empresas</SelectItem>
+                            {companies?.map((c: any) => (
+                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            )}
+
+            {(
+              user?.role === UserRole.COMPANY_ADMIN || 
+              (user?.role === UserRole.PLATFORM_ADMIN && selectedCompanyId && selectedCompanyId !== 'ALL')
+            ) && (
+                <Button asChild className="w-full md:w-auto">
+                    {/* Dica: Podemos passar o state da empresa selecionada para a página de criação se quisermos facilitar, 
+                        mas o comportamento padrão já deve funcionar se o contexto estiver montado. */}
+                    <Link 
+                        to="/events/create" 
+                        state={{ preselectedCompanyId: selectedCompanyId !== 'ALL' ? selectedCompanyId : undefined }}
+                    >
+                        Criar Novo Evento
+                    </Link>
+                </Button>
+            )}
+
+          </div>
         </div>
 
         {filteredEvents.length === 0 ? (
@@ -147,7 +205,10 @@ const ListEventsPage: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Evento</TableHead>
-                    {user.role === UserRole.PLATFORM_ADMIN && <TableHead>Empresa</TableHead>}
+                    {/* Só mostra a coluna Empresa se estiver a ver TODAS */}
+                    {user.role === UserRole.PLATFORM_ADMIN && (!selectedCompanyId || selectedCompanyId === 'ALL') && (
+                        <TableHead>Empresa</TableHead>
+                    )}
                     <TableHead>Data</TableHead>
                     <TableHead>Local</TableHead>
                     <TableHead>Status</TableHead>
@@ -158,7 +219,9 @@ const ListEventsPage: React.FC = () => {
                   {filteredEvents.map((event) => (
                     <TableRow key={event.id}>
                       <TableCell className="font-medium">{event.name}</TableCell>
-                      {user.role === UserRole.PLATFORM_ADMIN && <TableCell>{event.company.name}</TableCell>}
+                      {user.role === UserRole.PLATFORM_ADMIN && (!selectedCompanyId || selectedCompanyId === 'ALL') && (
+                        <TableCell className="text-sm text-gray-600">{event.company.name}</TableCell>
+                      )}
                       <TableCell>{formatDateTimeDisplay(event.startDate)}</TableCell>
                       <TableCell>{event.location}</TableCell>
                       <TableCell>{event.isActive ? 'Ativo' : 'Inativo'}</TableCell>
@@ -176,6 +239,9 @@ const ListEventsPage: React.FC = () => {
                               <Button variant="ghost" size="icon" asChild title="Editar Evento">
                                 <Link to={`/events/edit/${event.id}`}><FilePenLine className="h-4 w-4" /></Link>
                               </Button>
+                              <Button variant="ghost" size="icon" title="Duplicar" onClick={() => handleClone(event.id)}>
+                                <Copy className="w-4 h-4 text-amber-600" />
+                              </Button>                              
                               <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(event)} className="text-red-600 hover:text-red-700" title="Eliminar Evento">
                                 <Trash2 className="h-4 w-4" />
                               </Button>

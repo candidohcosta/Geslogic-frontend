@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchPublicCompanyProfile, fetchMyFavoriteCompanies, addFavoriteCompany, removeFavoriteCompany } from '../services/api';
 import { Helmet } from 'react-helmet-async';
 import { ImageSlideshow } from '../components/ui/ImageSlideshow';
-import { useCompany } from '../context/CompanyContext';
+import { useSubdomain } from '../context/SubdomainContext';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -38,7 +38,7 @@ const PublicCompanyPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const { companySlug: slugFromSubdomain } = useCompany();
+  const { companySlug: slugFromSubdomain } = useSubdomain();
   const { user, isAuthenticated } = useAuth();
 
   const slug = slugFromSubdomain || params.slug;

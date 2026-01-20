@@ -137,7 +137,7 @@ const EmailTemplatesPage: React.FC = () => {
   const isPlatformTemplate = !template.company; 
   
   // Um Company Admin pode editar se o 'template.company.id' for igual ao 'user.companyId'.
-  const canCompanyAdminEdit = user?.role === UserRole.COMPANY_ADMIN && template.company?.id === user?.companyId;
+  const canCompanyAdminEdit = user?.role === UserRole.COMPANY_ADMIN && template.company?.id === user?.company?.id;
 
 
     // --- O NOSSO BLOCO DE DEPURAÇÃO ---
