@@ -26,7 +26,7 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 // Configuração do Socket com reconexão automática
-const socket = io('http://localhost:3000', {
+const socket = io(process.env.REACT_APP_API_BASE_URL, {
     reconnection: true,
     reconnectionAttempts: Infinity,
 }); 

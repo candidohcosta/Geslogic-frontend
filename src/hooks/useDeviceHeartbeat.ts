@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import io from 'socket.io-client';
 
 // Nota: Em produção, este URL deve vir de variáveis de ambiente
-const socket = io('http://localhost:3000', {
+const socket = io(process.env.REACT_APP_API_BASE_URL, {
   reconnection: true,        // Tenta reconectar sempre
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,

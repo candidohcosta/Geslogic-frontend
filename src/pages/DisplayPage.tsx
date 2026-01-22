@@ -46,7 +46,7 @@ interface DisplayConfig {
   logo?: { url: string; } | null;
 }
 
-const socket = io('http://localhost:3000'); // Ajusta para produção se necessário
+const socket = io(process.env.REACT_APP_API_BASE_URL); // Ajusta para produção se necessário
 
 const DisplayPage: React.FC = () => {
   const [deviceSecret] = useState(() => localStorage.getItem('displayDeviceSecret'));
