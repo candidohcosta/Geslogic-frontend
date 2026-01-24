@@ -9,11 +9,12 @@ module.exports = function(app) {
   }
 
   app.use(
-    ['/api', '/uploads'],
+    ['/api', '/uploads', '/socket.io'],
     createProxyMiddleware({
       target: 'http://localhost:3000', // No PC usa localhost
       changeOrigin: true,
       secure: false,
+      ws: true,
     })
   );
 };

@@ -1,12 +1,11 @@
 // frontend/src/context/NotificationContext.tsx
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react'; // Adicionar useRef
 import { useAuth } from './AuthContext';
 import { fetchNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../services/api';
-import io from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import toast, { Toaster } from 'react-hot-toast';
 
-// Interfaces
 export interface Notification {
   id: string;
   title: string;
@@ -25,49 +24,48 @@ interface NotificationContextType {
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
-// Configuração do Socket com reconexão automática
-const socket = io(process.env.REACT_APP_API_BASE_URL, {
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-}); 
-
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  
+  // Usamos uma ref para guardar o socket, evitando recriações desnecessárias
+  const socketRef = useRef<Socket | null>(null);
 
   const loadNotifications = () => {
       fetchNotifications().then(setNotifications).catch(console.error);
   };
 
-  // 1. Carregar histórico e Ligar Socket
   useEffect(() => {
+    // SÓ INICIALIZA O SOCKET SE HOUVER UTILIZADOR LOGADO
     if (user) {
-      // A. Carregar histórico da API (BD)
       loadNotifications();
-      
-      // B. Função para entrar na sala (canal) do utilizador
+
+      // 1. Criar Socket (Usando a origem atual para evitar problemas de CORS/Localhost)
+      // O path /socket.io é tratado pelo Nginx no VPS e pelo Proxy no PC.
+      const socketUrl = window.location.origin;
+      const newSocket = io(socketUrl, {
+        path: '/socket.io',
+        transports: ['websocket'], // Forçar websocket é mais estável
+        withCredentials: true,
+        reconnection: true,
+      });
+
+      socketRef.current = newSocket;
+
+      // 2. Definir eventos
       const joinChannel = () => {
-          console.log(`[Socket] A entrar no canal do utilizador: ${user.id}`);
-          socket.emit('join_user_channel', user.id);
+          // console.log(`[NotificationSocket] A entrar no canal: ${user.id}`);
+          newSocket.emit('join_user_channel', user.id);
       };
 
-      // 1. Se o socket não estiver conectado, conecta.
-      if (!socket.connected) socket.connect();
+      newSocket.on('connect', joinChannel);
+      
+      // Se já conectou instantaneamente (ex: reconexão)
+      if (newSocket.connected) joinChannel();
 
-      // 2. Entra na sala imediatamente
-      joinChannel();
-
-      // 3. CRÍTICO: Se a ligação cair e voltar, entra na sala outra vez!
-      socket.on('connect', joinChannel);
-
-      // C. Ouvir novas notificações em tempo real
       const handleNewNotification = (newNotif: Notification) => {
-        console.log("[Socket] Notificação recebida:", newNotif); // <--- DEBUG
-        
         setNotifications(prev => [newNotif, ...prev]);
-        
-        // DISPARAR O POPUP VISUAL (TOAST)
-        const toastOpts = { id: newNotif.id }; // Evita duplicados
+        const toastOpts = { id: newNotif.id };
         switch (newNotif.type) {
             case 'ERROR': toast.error(`${newNotif.title}: ${newNotif.message}`, toastOpts); break;
             case 'SUCCESS': toast.success(`${newNotif.title}: ${newNotif.message}`, toastOpts); break;
@@ -77,21 +75,21 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       };
 
       const handleUpdateSignal = () => {
-          console.log("[Socket] Sinal de atualização recebido. Recarregando notificações...");
-          loadNotifications(); // <--- Vai ao backend buscar o estado fresco (onde já estão lidas)
+          loadNotifications(); 
       };
 
-      socket.on('NEW_SYSTEM_NOTIFICATION', handleNewNotification);
-      socket.on('NOTIFICATIONS_UPDATED', handleUpdateSignal);      
+      newSocket.on('NEW_SYSTEM_NOTIFICATION', handleNewNotification);
+      newSocket.on('NOTIFICATIONS_UPDATED', handleUpdateSignal);      
 
-      // Limpeza ao desmontar ou mudar de user
+      // 3. Limpeza ao desmontar ou ao fazer logout
       return () => { 
-        socket.off('connect', joinChannel);
-        socket.off('NEW_SYSTEM_NOTIFICATION', handleNewNotification);
-        socket.off('NOTIFICATIONS_UPDATED', handleUpdateSignal);
+        if (newSocket) {
+            newSocket.emit('leave_user_channel', user.id); // Opcional, mas boa prática
+            newSocket.disconnect();
+        }
       };
     }
-  }, [user]);
+  }, [user]); // Recria o socket apenas se o user mudar (login/logout)
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -108,7 +106,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead }}>
       {children}
-      {/* O componente que desenha os popups */}
       <Toaster position="bottom-right" toastOptions={{ duration: 5000 }} />
     </NotificationContext.Provider>
   );
