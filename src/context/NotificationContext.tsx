@@ -40,12 +40,19 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     if (user) {
       loadNotifications();
 
-      // 1. Criar Socket (Usando a origem atual para evitar problemas de CORS/Localhost)
-      // O path /socket.io é tratado pelo Nginx no VPS e pelo Proxy no PC.
-      const socketUrl = window.location.origin;
-      const newSocket = io(socketUrl, {
-        path: '/socket.io',
-        transports: ['websocket'], // Forçar websocket é mais estável
+      // *** CORREÇÃO: Lógica Flexível para Socket URL ***
+      // Se tivermos um URL de API definido (como no .env), usamos.
+      let socketUrl = process.env.REACT_APP_API_BASE_URL ?? window.location.origin;
+      
+      // Remove o '/api' se estiver presente (porque o socket está na raiz da API)
+      if (socketUrl.endsWith('/api')) {
+          socketUrl = socketUrl.replace('/api', '');
+      }
+
+      const newSocket = io(socketUrl, { // AGORA USA A PORTA 3000 DO BACKEND
+        // O path /socket.io deve ser mantido
+        path: '/socket.io', 
+        transports: ['websocket'], 
         withCredentials: true,
         reconnection: true,
       });

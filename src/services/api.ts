@@ -8,7 +8,7 @@ import { SupportTicketStatus, SupportTicketPriority } from '../types/support';
 import { ResourceType } from '../types/scheduling';
 
 //const BASE_URL = process.env.REACT_APP_API_BASE_URL;
-const BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;// || '/api';
 
   // Criamos um "event dispatcher" para o evento de 401
   const onUnauthorized = new EventTarget();

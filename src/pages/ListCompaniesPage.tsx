@@ -247,13 +247,12 @@ return (
                   <TableHead className="text-right">Ações</TableHead> {/* <-- NOVA COLUNA */}
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {filteredCompanies.map((company) => (
+              <TableBody>{
+                filteredCompanies.map((company) => (
                   <TableRow
                     key={company.id}
                     onContextMenu={(e) => handleContextMenu(e, company)}
-                    className="cursor-pointer"
-                  >
+                    className="cursor-pointer">
                     <TableCell className="font-medium">{company.name}</TableCell>
                     <TableCell>{company.email}</TableCell>
                     <TableCell>{company.nif}</TableCell>
@@ -287,8 +286,7 @@ return (
         copy(url);
         // Opcional: mostrar um feedback visual de "copiado"
       }}
-      title="Copiar Link Público"
-    >
+      title="Copiar Link Público">
       <Copy className="h-4 w-4" />
     </Button>    
     {/* Link para Admins */}
@@ -312,13 +310,12 @@ return (
           </div>
 
           {/* 2. VISTA DE CARTÕES PARA ECRÃS PEQUENOS */}
-          <div className="grid grid-cols-1 gap-4 md:hidden"> {/* 'md:hidden' -> Visível por defeito, escondido a partir de 'md' */}
-            {filteredCompanies.map((company) => (
+          <div className="grid grid-cols-1 gap-4 md:hidden">{ 
+            filteredCompanies.map((company) => (
               <div
                 key={company.id}
                 onContextMenu={(e) => handleContextMenu(e, company)}
-                className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 space-y-2"
-              >
+                className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 space-y-2">
                 <div className="font-bold text-lg">{company.name}</div>
                 <div className="text-sm text-muted-foreground">{company.email}</div>
                 <div className="text-sm"><strong>NIF:</strong> {company.nif}</div>
