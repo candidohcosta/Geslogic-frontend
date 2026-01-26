@@ -93,8 +93,10 @@ const LoginForm: React.FC = () => {
             // 1. Atualizamos o estado GLOBAL do AuthContext com os dados do JSON
              login(userToLogin);
              // 2. Redirecionamos IMEDIATAMENTE (pode ser navigate, já não precisa de window.location.href)
-             handleSuccessRedirect(userToLogin); //CORRECAO PARA O F5 NO VPS
-             //handleSuccessRedirect(userToLogin, data.accessToken);
+//             handleSuccessRedirect(userToLogin); //CORRECAO PARA O F5 NO VPS
+            window.location.href = '/dashboard'; 
+            return;
+
         }
       }
     } catch (error: any) {
