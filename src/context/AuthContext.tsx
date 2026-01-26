@@ -17,23 +17,13 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // 1. HIDRATAÇÃO IMEDIATA: 
-  // O estado nasce já preenchido com o que está no disco, sem esperar pela API.
+  // 1. HIDRATAÇÃO: Lê o localStorage imediatamente ao nascer
   const [user, setUser] = useState<UserData | null>(() => {
     const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        return JSON.parse(savedUser);
-      } catch {
-        return null;
-      }
-    }
-    return null;
+    return savedUser ? JSON.parse(savedUser) : null;
   });
 
-  // 2. CONTROLO DE LOADING INTELIGENTE:
-  // Se já temos um user no localStorage, não precisamos de mostrar 
-  // o ecrã de "A carregar sessão". Deixamos o utilizador ver logo o Dashboard.
+  // 2. LOADING INTELIGENTE: Se já temos user no disco, não precisamos de travar a UI
   const [isLoading, setIsLoading] = useState(!localStorage.getItem('user'));
 
   // 1. LOGOUT (A TUA LÓGICA ORIGINAL)
@@ -80,16 +70,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
       } catch (error) {
-        // *** AQUI ESTÁ A CHAVE ***
-        // Se a API falhar (401), mas nós temos um utilizador no localStorage,
-        // NÃO o apagamos imediatamente. Pode ser apenas a "corrida do cookie" no VPS.
-        // Só limpamos se não houver mesmo nada guardado.
+        // *** CRÍTICO: Se a API falhar (ex: timing do cookie no VPS), 
+        // NÃO limpamos o utilizador se ele existir no localStorage.
+        // Damos o benefício da dúvida para evitar o loop de redirecionamento.
         if (!localStorage.getItem('user')) {
           setUser(null);
         }
-        
-        // Log de aviso para debug
-        console.warn("Validação de sessão em background falhou. Mantendo estado local.");
+        console.warn("Aviso: Validação em background falhou.");
       } finally {
         setIsLoading(false);
       }

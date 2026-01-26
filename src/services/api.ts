@@ -36,7 +36,7 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
           if (!refreshResponse.ok) {
             // Se o refresh falhar, limpa a promessa e desloga
             refreshingPromise = null;
-            onUnauthorized.dispatchEvent(new Event('unauthorized'));
+//            onUnauthorized.dispatchEvent(new Event('unauthorized'));
             const errorData = await refreshResponse.json().catch(() => ({}));
             throw new Error(errorData.message || 'Sessão expirada.');
           }
@@ -46,7 +46,7 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
         })
         .catch((error) => {
           refreshingPromise = null;
-          onUnauthorized.dispatchEvent(new Event('unauthorized'));
+//          onUnauthorized.dispatchEvent(new Event('unauthorized'));
           throw error;
         });
     }
