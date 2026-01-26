@@ -63,31 +63,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   // 3. VALIDAÇÃO DE BACKGROUND (Meticulosa)
-  useEffect(() => {
-    const checkUserSession = async () => {
-      try {
-        const userData = await fetchUserProfile();
-        setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
-      } catch (error) {
-        // *** CRÍTICO: Se a API falhar (ex: timing do cookie no VPS), 
-        // NÃO limpamos o utilizador se ele existir no localStorage.
-        // Damos o benefício da dúvida para evitar o loop de redirecionamento.
-        if (!localStorage.getItem('user')) {
-          setUser(null);
-        }
-        console.warn("Aviso: Validação em background falhou.");
-      } finally {
-        setIsLoading(false);
+useEffect(() => {
+  const checkUserSession = async () => {
+    console.log("[AuthDebug] 1. Iniciando checkUserSession...");
+    console.log("[AuthDebug] 2. Estado atual 'user':", user ? "Preenchido" : "null");
+    console.log("[AuthDebug] 3. LocalStorage 'user':", localStorage.getItem('user') ? "Existe" : "Vazio");
+
+    try {
+      const userData = await fetchUserProfile();
+      console.log("[AuthDebug] 4. Sucesso na API /profile");
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+    } catch (error) {
+      console.error("[AuthDebug] 4. FALHA na API /profile:", error instanceof Error ? error.message : String(error));
+      
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        console.log("[AuthDebug] 5. A API falhou, mas mantendo utilizador local por resiliência.");
+      } else {
+        console.log("[AuthDebug] 5. Sem dados locais e sem resposta da API. Limpando.");
+        setUser(null);
       }
-    };
+    } finally {
+      setIsLoading(false);
+      console.log("[AuthDebug] 6. checkUserSession concluído. isLoading = false");
+    }
+  };
 
-    checkUserSession();
+  checkUserSession();
 
-    const handleUnauthorized = () => logout();
-    addUnauthorizedListener(handleUnauthorized);
-
-  }, [logout]);
+  const handleUnauthorized = () => {
+    console.warn("[AuthDebug] EVENTO UNAUTHORIZED DETETADO!");
+    logout();
+  };
+  addUnauthorizedListener(handleUnauthorized);
+}, [logout]);
 
   const value = { 
     user, 

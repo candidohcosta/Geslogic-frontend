@@ -88,7 +88,8 @@ const LoginForm: React.FC = () => {
       } else {
         const userToLogin = { ...data.user, is2FASetupRequired: data.is2FASetupRequired };
         if (data.is2FASetupRequired) {
-             handleSuccessRedirect(userToLogin); 
+          login(userToLogin); 
+          handleSuccessRedirect(userToLogin); 
         } else {
             // 1. Atualizamos o estado GLOBAL do AuthContext com os dados do JSON
              login(userToLogin);

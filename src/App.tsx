@@ -128,7 +128,7 @@ function AppLayout() {
   useEffect(() => {
     if (subdomain === 'kiosk' || subdomain === 'display') return;
 
-    const publicPaths = ['/', '/login', '/register', '/forgot-password', '/reset-password'];
+    const publicPaths = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/setup-required'];
     
     const isPublicDynamicPath = 
       location.pathname.startsWith('/events/') || 
