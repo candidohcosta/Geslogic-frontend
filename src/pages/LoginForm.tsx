@@ -38,7 +38,8 @@ const LoginForm: React.FC = () => {
     window.location.reload();
   };
 
-  const handleSuccessRedirect = (user: any) => {
+  const handleSuccessRedirect = (user: any) => {  //VERSÃO ANTIGA
+  //const handleSuccessRedirect = (user: any, initialToken: string | null = null) => { 
     if (user.is2FASetupRequired) { 
         navigate('/setup-required');
         return;
@@ -67,7 +68,7 @@ const LoginForm: React.FC = () => {
       window.location.href = newUrl;
     } else {
       //navigate('/dashboard', { replace: true });
-      window.location.href = '/dashboard'; 
+      window.location.href = '/dashboard';
     }
   };
 
@@ -89,8 +90,9 @@ const LoginForm: React.FC = () => {
         if (data.is2FASetupRequired) {
              handleSuccessRedirect(userToLogin); 
         } else {
-             login(userToLogin);
-             handleSuccessRedirect(userToLogin);
+//             login(userToLogin);
+             handleSuccessRedirect(userToLogin); //CORRECAO PARA O F5 NO VPS
+             //handleSuccessRedirect(userToLogin, data.accessToken);
         }
       }
     } catch (error: any) {
@@ -125,8 +127,9 @@ const LoginForm: React.FC = () => {
     
     try {
       const data = await verify2FA(otpCode, tempToken, isTrusted);
-      login(data.user);
-      handleSuccessRedirect(data.user);
+//      login(data.user);
+      handleSuccessRedirect(data.user); //CORRECAO PARA O F5 NO VPS
+      //handleSuccessRedirect(data.user, data.accessToken);
     } catch (error: any) {
       setMessage('Código incorreto. Tente novamente.');
       setOtpCode(''); 
