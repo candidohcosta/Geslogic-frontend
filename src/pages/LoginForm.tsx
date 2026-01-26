@@ -66,7 +66,8 @@ const LoginForm: React.FC = () => {
       const newUrl = `${protocol}//${user.companySlug}.${mainDomain}${targetPort}/dashboard`;
       window.location.href = newUrl;
     } else {
-      navigate('/dashboard', { replace: true });
+      //navigate('/dashboard', { replace: true });
+      window.location.href = '/dashboard'; 
     }
   };
 
