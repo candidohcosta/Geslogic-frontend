@@ -90,7 +90,9 @@ const LoginForm: React.FC = () => {
         if (data.is2FASetupRequired) {
              handleSuccessRedirect(userToLogin); 
         } else {
-//             login(userToLogin);
+            // 1. Atualizamos o estado GLOBAL do AuthContext com os dados do JSON
+             login(userToLogin);
+             // 2. Redirecionamos IMEDIATAMENTE (pode ser navigate, já não precisa de window.location.href)
              handleSuccessRedirect(userToLogin); //CORRECAO PARA O F5 NO VPS
              //handleSuccessRedirect(userToLogin, data.accessToken);
         }
@@ -127,7 +129,7 @@ const LoginForm: React.FC = () => {
     
     try {
       const data = await verify2FA(otpCode, tempToken, isTrusted);
-//      login(data.user);
+      login(data.user); // Atualiza o estado
       handleSuccessRedirect(data.user); //CORRECAO PARA O F5 NO VPS
       //handleSuccessRedirect(data.user, data.accessToken);
     } catch (error: any) {

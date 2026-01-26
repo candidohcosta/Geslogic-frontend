@@ -59,11 +59,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 4. EFFECTS (A TUA LÓGICA ORIGINAL)
   useEffect(() => {
     const checkUserSession = async () => {
+      // REGRA DE OURO: Se o estado já tem um utilizador (acabou de fazer login),
+      // não precisamos de validar o perfil imediatamente.
+      if (user) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Se não há user no estado, mas há no localStorage, tentamos validar
       try {
         const userData = await fetchUserProfile();
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
       } catch (error) {
+        // Só limpamos se o erro for realmente de falta de autenticação
         setUser(null);
         localStorage.removeItem('user');
       } finally {
@@ -76,7 +85,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const handleUnauthorized = () => logout();
     addUnauthorizedListener(handleUnauthorized);
 
-  }, [logout]);
+  }, [logout]); // Removido o 'user' das dependências para evitar loops
 
   const value = { 
     user, 
