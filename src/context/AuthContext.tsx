@@ -17,8 +17,24 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // 1. HIDRATAÇÃO IMEDIATA: 
+  // O estado nasce já preenchido com o que está no disco, sem esperar pela API.
+  const [user, setUser] = useState<UserData | null>(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      try {
+        return JSON.parse(savedUser);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  // 2. CONTROLO DE LOADING INTELIGENTE:
+  // Se já temos um user no localStorage, não precisamos de mostrar 
+  // o ecrã de "A carregar sessão". Deixamos o utilizador ver logo o Dashboard.
+  const [isLoading, setIsLoading] = useState(!localStorage.getItem('user'));
 
   // 1. LOGOUT (A TUA LÓGICA ORIGINAL)
   const logout = useCallback(async () => {
@@ -56,36 +72,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  // 4. EFFECTS (A TUA LÓGICA ORIGINAL)
+  // 3. VALIDAÇÃO DE BACKGROUND (Meticulosa)
   useEffect(() => {
     const checkUserSession = async () => {
-      // REGRA DE OURO: Se o estado já tem um utilizador (acabou de fazer login),
-      // não precisamos de validar o perfil imediatamente.
-      if (user) {
-        setIsLoading(false);
-        return;
-      }
-
-      // Se não há user no estado, mas há no localStorage, tentamos validar
       try {
         const userData = await fetchUserProfile();
         setUser(userData);
         localStorage.setItem('user', JSON.stringify(userData));
       } catch (error) {
-        // Só limpamos se o erro for realmente de falta de autenticação
-        setUser(null);
-        localStorage.removeItem('user');
+        // *** AQUI ESTÁ A CHAVE ***
+        // Se a API falhar (401), mas nós temos um utilizador no localStorage,
+        // NÃO o apagamos imediatamente. Pode ser apenas a "corrida do cookie" no VPS.
+        // Só limpamos se não houver mesmo nada guardado.
+        if (!localStorage.getItem('user')) {
+          setUser(null);
+        }
+        
+        // Log de aviso para debug
+        console.warn("Validação de sessão em background falhou. Mantendo estado local.");
       } finally {
         setIsLoading(false);
       }
     };
+
     checkUserSession();
 
-    // O listener apanha os 401s que acontecem depois do arranque (Interceptor)
     const handleUnauthorized = () => logout();
     addUnauthorizedListener(handleUnauthorized);
 
-  }, [logout]); // Removido o 'user' das dependências para evitar loops
+  }, [logout]);
 
   const value = { 
     user, 
