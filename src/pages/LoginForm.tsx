@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/Card';
-import { Laptop, Eraser } from 'lucide-react';
+import { Laptop, Eraser, Eye, EyeOff } from 'lucide-react';
 
 const LoginForm: React.FC = () => {
   const navigate = useNavigate();
@@ -19,6 +19,7 @@ const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
   // MÁQUINA DE ESTADOS VISUAL (A Solução para o Loop)
   // 'credentials': Login inicial
@@ -220,19 +221,41 @@ const LoginForm: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="exemplo@empresa.com"
+                  tabIndex={1} 
                 />
               </div>
-              <div className="grid w-full max-w-sm items-center gap-1.5">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  type="password"
-                  id="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+<div className="grid w-full max-w-sm items-center gap-1.5 relative">
+  <div className="flex justify-between items-center">
+    <Label htmlFor="password">Password</Label>
+    <Link 
+      to="/forgot-password" 
+      className="text-xs text-blue-600 hover:underline"
+      tabIndex={4}
+    >
+      Esqueceu-se da palavra-passe?
+    </Link>
+  </div>
+  <div className="relative">
+    <Input
+      type={showPassword ? "text" : "password"}
+      id="password"
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+      required
+      className="pr-10" // Espaço para o ícone
+      tabIndex={2}
+    />
+    <button
+      type="button"
+      onClick={() => setShowPassword(!showPassword)}
+      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+      tabIndex={5}
+    >
+      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+    </button>
+  </div>
+</div>
+              <Button type="submit" className="w-full" disabled={loading} tabIndex={3}>
                 {loading ? 'A verificar...' : 'Continuar'}
               </Button>
             </form>

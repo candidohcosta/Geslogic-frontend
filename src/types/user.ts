@@ -1,4 +1,4 @@
-// frontend/src/types/user.d.ts
+// frontend/src/types/user.ts
 
 export enum UserRole {
   PLATFORM_ADMIN = "PLATFORM_ADMIN",
@@ -6,6 +6,14 @@ export enum UserRole {
   PARTICIPANT = "PARTICIPANT",
   OPERATOR = "OPERATOR",
   EVENT_STAFF = 'EVENT_STAFF',
+}
+
+// Enum de tipos de Admin da Plataforma
+export enum PlatformAdminType {
+  SUPER_ADMIN = "SUPER_ADMIN",
+  SUPPORT_L2 = "SUPPORT_L2",
+  AUDITOR = "AUDITOR",
+  FINANCE = "FINANCE",
 }
 
 export enum EventStaffRole {
@@ -26,27 +34,18 @@ export interface EventStaffDetailsData {
   };
 }
 
-/* export interface UserData {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: UserRole; // Alterado para UserRole enum
-  companyId?: string;
-  companyName?: string;
-  companySlug?: string;
-  subscribedServices?: string[];
-  createdAt: string;
-  updatedAt: string;
-  expiresIn?: string; // NOVO: Duração da validade do token (ex: "60m", "12h")
-} */
-
 export interface UserData {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
   role: UserRole;
+
+  platformAdminDetails?: {
+    id: string;
+    adminType: PlatformAdminType;
+  } | null;
+
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

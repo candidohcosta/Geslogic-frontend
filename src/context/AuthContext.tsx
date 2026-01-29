@@ -97,6 +97,10 @@ useEffect(() => {
     logout();
   };
   addUnauthorizedListener(handleUnauthorized);
+  return () => {
+    // Boa prática: remover o listener ao desmontar
+    // (Se a tua função addUnauthorizedListener permitir remoção)
+  };  
 }, [logout]);
 
   const value = { 

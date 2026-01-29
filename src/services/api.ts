@@ -36,7 +36,7 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
           if (!refreshResponse.ok) {
             // Se o refresh falhar, limpa a promessa e desloga
             refreshingPromise = null;
-//            onUnauthorized.dispatchEvent(new Event('unauthorized'));
+            onUnauthorized.dispatchEvent(new Event('unauthorized'));
             const errorData = await refreshResponse.json().catch(() => ({}));
             throw new Error(errorData.message || 'Sessão expirada.');
           }
@@ -46,7 +46,7 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
         })
         .catch((error) => {
           refreshingPromise = null;
-//          onUnauthorized.dispatchEvent(new Event('unauthorized'));
+          onUnauthorized.dispatchEvent(new Event('unauthorized'));
           throw error;
         });
     }
@@ -224,6 +224,18 @@ export const deleteFile = (fileId: string) => {
   return apiFetch(`/uploads/file/${fileId}`, { method: 'DELETE' });
 };
 
+// --- GESTÃO DE ADMINISTRADORES DA PLATAFORMA ---
+
+export const fetchPlatformAdmins = () => {
+  return apiFetch('/users/platform-admins');
+};
+
+export const createPlatformAdmin = (adminData: any) => {
+  return apiFetch('/users/platform-admins', {
+    method: 'POST',
+    body: JSON.stringify(adminData),
+  });
+};
 
 // COMPANY ADMINS
 export const fetchCompanyAdmins = (companyId?: string) => {
@@ -1328,4 +1340,20 @@ export const registerEventInterest = (eventId: string, email: string, name?: str
 
 export const cloneEvent = (eventId: string) => {
   return apiFetch(`/events/${eventId}/clone`, { method: 'POST' });
+};
+
+// --- BACKUP MANAGEMENT ---
+
+export const fetchBackups = () => apiFetch('/backups/list');
+
+export const generateBackup = (companyId: string) => 
+  apiFetch(`/backups/generate/${companyId}`, { method: 'POST' });
+
+export const restoreBackup = (id: string) => 
+  apiFetch(`/backups/restore/${id}`, { method: 'POST' });
+
+export const uploadBackup = (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiFetch('/backups/upload', { method: 'POST', body: formData });
 };

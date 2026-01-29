@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom'; // 1. Importar Link e useLocation
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/user';
-import { HeartPulse, Activity, List, Users, Settings, Ticket, ClipboardList, BriefcaseBusiness, SquarePlus, UserPlus, Contact, OctagonMinus, ListOrdered, Blocks, Computer, Tablet, Tv, MonitorCheck, ChartBarStacked, Star, CreditCard, UserCog, Mails, ShieldUser, Send, FileSliders  } from 'lucide-react';
+import { HeartPulse, Activity, List, Users, Settings, Ticket, ClipboardList, BriefcaseBusiness, SquarePlus, UserPlus, Contact, OctagonMinus, ListOrdered, Blocks, Computer, Tablet, Tv, MonitorCheck, ChartBarStacked, Star, CreditCard, UserCog, Mails, ShieldUser, Send, FileSliders, Database  } from 'lucide-react';
 import { CalendarDays, CalendarRange } from 'lucide-react';
 
 interface SidebarProps {
@@ -19,6 +19,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
   const [showEventSubmenu, setShowEventSubmenu] = useState(false); // Estado para o submenu de Eventos
   const [showTicketSubmenu, setShowTicketSubmenu] = useState(false); // Estado para o submenu de Bilhetes
   const [showSchedulingSubmenu, setShowSchedulingSubmenu] = useState(false); // Estado para o submenu de Agendamento
+  const [showPlatformManagementSubmenu, setShowPlatformManagementSubmenu] = useState(false); // Estado para o submenu de Gestão da Plataforma
+
+  // Guarda o ID do menu aberto ('platform', 'events', 'tickets', 'scheduling') ou null se tudo fechado.
+  const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
+
+  // Função auxiliar para alternar (Se já está aberto, fecha. Se outro está aberto, troca.)
+  const toggleSubmenu = (menuName: string) => {
+    setOpenSubmenu(prev => prev === menuName ? null : menuName);
+  };
 
   if (!user) {
     return null; // Não mostra nada se não houver utilizador
@@ -76,8 +85,88 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
             </Link>
           </li>
 
+{/* MENU CONSOLIDADO: Gestão da Plataforma (Apenas Platform Admin) */}
+{user?.role === UserRole.PLATFORM_ADMIN && (
+  <li>
+    <button
+      onClick={() => toggleSubmenu('platform')}
+      className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
+        openSubmenu === 'platform' || currentPath.startsWith('/platform-admins') ? 'bg-gray-700 font-bold' : ''
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <Settings className="w-5 h-5" />
+        <span>Gestão da Plataforma</span>
+      </div>
+      <svg
+        className={`w-4 h-4 transform transition-transform duration-200 ${
+          openSubmenu === 'platform' ? 'rotate-90' : ''
+        }`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
+      </svg>
+    </button>
+    
+    {openSubmenu === 'platform' && (
+      <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
+        {/* 1. Administradores da Plataforma */}
+        <li>
+          <Link to="/platform-admins" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/platform-admins' ? 'text-white font-bold' : 'text-gray-300'}`}>
+            <ShieldUser className="w-4 h-4" /> Administradores
+          </Link>
+        </li>
+        
+        {/* 2. Empresas (Portal de Entrada para tudo o que é empresa) */}
+        <li>
+          <Link to="/companies/list" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/companies/list' ? 'text-white font-bold' : 'text-gray-300'}`}>
+            <BriefcaseBusiness className="w-4 h-4" /> Empresas
+          </Link>
+        </li>
+
+        {/* 3. Logs de Emails */}
+        <li>
+          <Link to="/sent-emails-log" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/sent-emails-log' ? 'text-white font-bold' : 'text-gray-300'}`}>
+            <Send className="w-4 h-4" /> Logs de Emails
+          </Link>
+        </li>
+
+        {/* 4. Logs do Sistema */}
+        <li>
+          <Link to="/logs" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/logs' ? 'text-white font-bold' : 'text-gray-300'}`}>
+            <FileSliders className="w-4 h-4" /> Logs do Sistema
+          </Link>
+        </li>
+
+        {/* 5. Saúde do Sistema */}
+        <li>
+          <Link to="/system-health" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/system-health' ? 'text-white font-bold' : 'text-gray-300'}`}>
+            <HeartPulse className="w-4 h-4" /> Saúde do Sistema
+          </Link>
+        </li>
+
+        {/* 3. Backups do Sistema */}
+        <li>
+          <Link 
+            to="/backups" 
+            className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
+              currentPath === '/backups' ? 'text-white font-bold' : 'text-gray-300'
+            }`}
+          >
+            <Database className="w-4 h-4" />Backups
+          </Link>
+        </li>
+
+      </ul>
+    )}
+  </li>
+)}
+
           {/* Menu para Platform Admin */}
-          {user?.role === UserRole.PLATFORM_ADMIN && (
+{/*           {user?.role === UserRole.PLATFORM_ADMIN && (
             <>
               <li>
                 <button
@@ -152,7 +241,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                 )}
               </li>
             </>
-          )}
+          )} */}
 
           {/* Menu para Company Admin */}
           {user?.role === UserRole.COMPANY_ADMIN && (
@@ -230,9 +319,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
           ) && (
             <li>
               <button
-                onClick={() => setShowEventSubmenu(!showEventSubmenu)}
+                onClick={() => toggleSubmenu('events')}
                 className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  showEventSubmenu || currentPath.startsWith('/event') ? 'bg-gray-700 font-bold' : ''
+                  openSubmenu === 'events' || currentPath.startsWith('/event') ? 'bg-gray-700 font-bold' : ''
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -241,7 +330,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                 </div>                  
                 <svg
                   className={`w-4 h-4 transform transition-transform duration-200 ${
-                    showEventSubmenu ? 'rotate-90' : ''
+                    openSubmenu === 'events' ? 'rotate-90' : ''
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -251,7 +340,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
                 </svg>
               </button>
-              {showEventSubmenu && (
+              {openSubmenu === 'events' && (
                 <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
                   {/* Apenas Company Admins e Platform Admins podem criar eventos */}
                   {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
@@ -313,9 +402,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
           {user && (user.role === UserRole.PLATFORM_ADMIN || (user.role === UserRole.COMPANY_ADMIN && user.company?.subscribedServices?.includes('QUEUES'))) && (
             <li>
               <button
-                onClick={() => setShowTicketSubmenu(!showTicketSubmenu)}
+                onClick={() => toggleSubmenu('tickets')}
                 className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  showTicketSubmenu || currentPath.startsWith('/services') ? 'bg-gray-700 font-bold' : ''
+                  openSubmenu === 'tickets' || currentPath.startsWith('/ticket') ? 'bg-gray-700 font-bold' : ''
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -324,7 +413,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                 </div>                
                 <svg
                   className={`w-4 h-4 transform transition-transform duration-200 ${
-                    showTicketSubmenu ? 'rotate-90' : ''
+                    openSubmenu === 'tickets' ? 'rotate-90' : ''
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -334,7 +423,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
                 </svg>
               </button>
-              {showTicketSubmenu && (
+              {openSubmenu === 'tickets' && (
                 <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
                   {/* Apenas Company Admins e Platform Admins podem criar eventos */}
                   {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
@@ -507,9 +596,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
           {user && (user.role === UserRole.PLATFORM_ADMIN || (user.role === UserRole.COMPANY_ADMIN && user.company?.subscribedServices?.includes('SCHEDULING'))) && (
             <li>
               <button
-                onClick={() => setShowSchedulingSubmenu(!showSchedulingSubmenu)}
+                onClick={() => toggleSubmenu('scheduling')} 
                 className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  showSchedulingSubmenu || currentPath.startsWith('/scheduling') ? 'bg-gray-700 font-bold' : ''
+                  openSubmenu === 'scheduling' || currentPath.startsWith('/scheduling') ? 'bg-gray-700 font-bold' : ''
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -518,7 +607,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                 </div>
                 <svg
                   className={`w-4 h-4 transform transition-transform duration-200 ${
-                    showSchedulingSubmenu ? 'rotate-90' : ''
+                    openSubmenu === 'scheduling' ? 'rotate-90' : ''
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -529,7 +618,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                 </svg>
               </button>
               
-              {showSchedulingSubmenu && (
+              {openSubmenu === 'scheduling' && (
                 <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
                   
                   {/* 1. VISÃO PRINCIPAL: CALENDÁRIO */}
@@ -634,7 +723,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
             </li>
           </>
           )}
-          {user?.role === UserRole.PLATFORM_ADMIN && (
+{/*           {user?.role === UserRole.PLATFORM_ADMIN && (
             <>
               <li>
                 <Link to="/sent-emails-log" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/sent-emails-log' ? 'bg-gray-700 font-bold' : ''}`}>
@@ -654,7 +743,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
               </li>
               <li>
                 <Link to="/system-health" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/system-health' ? 'bg-gray-700 font-bold' : ''}`}>
-                  {/* <HeartPulse className="mr-2 h-4 w-4" /> */}
                 <div className="flex items-center gap-2">
                     <HeartPulse className="w-5 h-5" />
                     <span>Saúde do Sistema</span>
@@ -662,7 +750,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
                 </Link>
               </li>
             </>
-          )}
+          )} */}
 
           {/* Item de menu para Participantes (apenas para o papel de Participante) */}
           {user?.role === UserRole.PARTICIPANT && (

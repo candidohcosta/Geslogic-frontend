@@ -19,6 +19,7 @@ import LoginForm from './pages/LoginForm';
 import RegisterForm from './pages/RegisterForm';
 import Dashboard from './pages/Dashboard';
 import EditProfilePage from './pages/EditProfilePage';
+import PlatformAdminsPage from './pages/PlatformAdminsPage';
 import CompanyEditPage from './pages/CompanyEditPage';
 import ListCompaniesPage from './pages/ListCompaniesPage';
 import ListCompanyAdminsPage from './pages/ListCompanyAdminsPage';
@@ -103,6 +104,7 @@ import EventFeedbackPage from './pages/EventFeedbackPage';
 import EventStaffListPage from './pages/event-staff/EventStaffListPage';
 import EditEventStaffPage from './pages/event-staff/EditEventStaffPage';
 import EventCheckInPage from './pages/EventCheckInPage';
+import BackupsPage from './pages/BackupsPage';
 
 const queryClient = new QueryClient();
 
@@ -218,6 +220,12 @@ function AppLayout() {
                         <Route path="/support/new" element={<CreateSupportTicketPage />} />
                         <Route path="/support/:ticketId" element={<SupportDetailPage />} />
                         <Route path="/edit-profile" element={<EditProfilePage />} />
+
+{/* NOVA ROTA: Gestão de Admins da Plataforma */}
+<Route path="/platform-admins" element={<PlatformAdminsPage />} />
+
+<Route path="/companies/create" element={<CreateCompanyPage />} />
+
                         <Route path="/change-password" element={<ChangePasswordPage />} />
                         <Route path="/events/list" element={<ListEventsPage />} />
                         <Route path="/events/preview/:eventId" element={<EventRegistrationPreviewPage />} />
@@ -293,6 +301,7 @@ function AppLayout() {
                         <Route path="/logs" element={<LogsPage />} />
                         <Route path="/sent-emails-log" element={<SentEmailsLogPage />} />
                         <Route path="/system-health" element={<SystemHealthPage />} />
+                        <Route path="/backups" element={<BackupsPage />} />
                         <Route path="/my-registrations" element={<MyRegistrationsPage />} />
                         <Route path="/policy-documents" element={<PolicyDocumentsPage />} />
                         <Route path="/policy-documents/new" element={<EditPolicyPage />} />

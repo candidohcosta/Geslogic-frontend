@@ -20,8 +20,9 @@ import {
   TableRow,
   TableCell,
 } from "../components/ui/Table";
-import { FilePenLine, Mail, Users, Ban, Trash2, LayoutDashboard, Copy, CreditCard} from 'lucide-react';
+import { FilePenLine, Mail, Users, Ban, Trash2, LayoutDashboard, Copy, CreditCard, Plus} from 'lucide-react';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
+import { toast } from 'react-hot-toast';
 
 
 interface CompanyData {
@@ -213,11 +214,20 @@ const ListCompaniesPage: React.FC = () => {
 return (
     // Usamos um Card como contentor principal da página
   <Card>
-    <CardHeader>
-      <CardTitle>Lista de Empresas</CardTitle>
-      <CardDescription>
-        Lista de todas as empresas registadas no sistema.
-      </CardDescription>
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
+      <div>
+        <CardTitle className="text-2xl font-bold">Empresas</CardTitle>
+        <CardDescription>
+          Gestão de todas as empresas registadas no sistema.
+        </CardDescription>
+      </div>
+      
+      {/* Botão padronizado no topo direito */}
+      <Button asChild>
+        <Link to="/companies/create">
+          <Plus className="mr-2 h-4 w-4" /> Nova Empresa
+        </Link>
+      </Button>
     </CardHeader>
     <CardContent className="space-y-4">
       <div className="mb-4">
@@ -247,65 +257,56 @@ return (
                   <TableHead className="text-right">Ações</TableHead> {/* <-- NOVA COLUNA */}
                 </TableRow>
               </TableHeader>
-              <TableBody>{
-                filteredCompanies.map((company) => (
-                  <TableRow
-                    key={company.id}
-                    onContextMenu={(e) => handleContextMenu(e, company)}
-                    className="cursor-pointer">
-                    <TableCell className="font-medium">{company.name}</TableCell>
-                    <TableCell>{company.email}</TableCell>
-                    <TableCell>{company.nif}</TableCell>
-                    <TableCell>{company.isActive ? 'Sim' : 'Não'}</TableCell>
-                    <TableCell className="text-right"> {/* <-- NOVA CÉLULA */}
-<div className="flex items-center justify-end space-x-1">
-    {/* Link para Editar dados gerais da empresa*/}
-    <Button variant="ghost" size="icon" asChild>
-      <Link to={`/companies/edit/${company.id}`} title="Editar Empresa">
-        <FilePenLine className="h-4 w-4" />
-      </Link>
-    </Button>
-{/* Botão Configuração Financeira */}
-                        <Button variant="ghost" size="icon" asChild title="Configurar Pagamentos">
-                          <Link to={`/companies/payment-config/${company.id}`}>
-                            <CreditCard className="h-4 w-4" />
-                          </Link>
-                        </Button>    
-    {/* Link para Editar homepage*/}
-    <Button variant="ghost" size="icon" asChild title="Editar Homepage da Empresa">
-      <Link to={`/companies/homepage/edit/${company.id}`}>
-        <LayoutDashboard className="h-4 w-4" />
-      </Link>
-    </Button>
-    {/* Link para Copiar link Publico da homepage*/}
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => {
-        const url = `${window.location.protocol}//${company.slug}.${process.env.REACT_APP_MAIN_DOMAIN}:${window.location.port}`;
-        copy(url);
-        // Opcional: mostrar um feedback visual de "copiado"
-      }}
-      title="Copiar Link Público">
-      <Copy className="h-4 w-4" />
-    </Button>    
-    {/* Link para Admins */}
-    <Button variant="ghost" size="icon" asChild>
-      <Link to={`/company-admins/list/${company.id}`} title="Ver Administradores">
-        <Users className="h-4 w-4" />
-      </Link>
-    </Button>
-    {/* Link para SMTP */}
-    <Button variant="ghost" size="icon" asChild>
-      <Link to={`/companies/smtp-config/${company.id}`} title="Configurar SMTP">
-        <Mail className="h-4 w-4" />
-      </Link>
-    </Button>
-  </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+<TableBody>
+  {filteredCompanies.map((company) => (
+    <TableRow
+      key={company.id}
+      onContextMenu={(e) => handleContextMenu(e, company)}
+      className="cursor-pointer hover:bg-gray-50/50 transition-colors"
+    >
+      <TableCell className="font-medium">{company.name}</TableCell>
+      <TableCell>{company.email}</TableCell>
+      <TableCell className="font-mono text-xs">{company.nif}</TableCell>
+      <TableCell>
+        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${company.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          {company.isActive ? 'Ativa' : 'Inativa'}
+        </span>
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end space-x-1">
+          {/* MANTIDAS TODAS AS TUAS AÇÕES ORIGINAIS */}
+          <Button variant="ghost" size="icon" asChild title="Editar Empresa">
+            <Link to={`/companies/edit/${company.id}`}><FilePenLine className="h-4 w-4" /></Link>
+          </Button>
+          <Button variant="ghost" size="icon" asChild title="Configurar Pagamentos">
+            <Link to={`/companies/payment-config/${company.id}`}><CreditCard className="h-4 w-4" /></Link>
+          </Button>    
+          <Button variant="ghost" size="icon" asChild title="Editar Homepage">
+            <Link to={`/companies/homepage/edit/${company.id}`}><LayoutDashboard className="h-4 w-4" /></Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              const url = `${window.location.protocol}//${company.slug}.${process.env.REACT_APP_MAIN_DOMAIN}${window.location.port ? ':' + window.location.port : ''}`;
+              copy(url);
+              toast.success('Link copiado!');
+            }}
+            title="Copiar Link Público"
+          >
+            <Copy className="h-4 w-4" />
+          </Button>    
+          <Button variant="ghost" size="icon" asChild title="Administradores">
+            <Link to={`/company-admins/list/${company.id}`}><Users className="h-4 w-4" /></Link>
+          </Button>
+          <Button variant="ghost" size="icon" asChild title="Configurar SMTP">
+            <Link to={`/companies/smtp-config/${company.id}`}><Mail className="h-4 w-4" /></Link>
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  ))}
+</TableBody>
             </Table>
           </div>
 

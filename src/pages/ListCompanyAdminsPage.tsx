@@ -14,7 +14,7 @@ import { Button } from '../components/ui/Button';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Label } from '../components/ui/Label';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "../components/ui/Table";
-import { FilePenLine, Building, Trash2,ShieldAlert } from 'lucide-react';
+import { FilePenLine, Building, Trash2,ShieldAlert, Plus } from 'lucide-react';
 
 interface CompanyAdminData {
   id: string;
@@ -139,14 +139,23 @@ const ListCompanyAdminsPage: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>
-          {companyId ? `Administradores da Empresa: ${companyNameFromData || '...'}` : 'Gestão de Administradores'}
-        </CardTitle>
-        <CardDescription>
-          {companyId ? `Apresenta os administradores da empresa '${companyNameFromData || '...'}'` : 'Lista de todos os administradores de empresa registados no sistema.'}
-        </CardDescription>
-      </CardHeader>
+  <CardHeader className="flex flex-row items-center justify-between">
+    <div>
+      <CardTitle>
+        {companyId ? `Administradores da Empresa: ${companyNameFromData || '...'}` : 'Gestão de Administradores'}
+      </CardTitle>
+      <CardDescription>
+        {companyId ? `Apresenta os administradores da empresa '${companyNameFromData || '...'}'` : 'Lista de todos os administradores de empresa registados no sistema.'}
+      </CardDescription>
+    </div>
+
+    {/* BOTÃO MOVIDO PARA O HEADER PARA CONSISTÊNCIA */}
+    {user.role === UserRole.PLATFORM_ADMIN && companyId && (
+      <Button onClick={() => setShowCreateAdminModal(true)}>
+        <Plus className="mr-2 h-4 w-4" /> Criar Administrador
+      </Button>
+    )}
+  </CardHeader>
       <CardContent className="space-y-4">
         <div className="mb-4">
           <Input
@@ -221,14 +230,14 @@ const ListCompanyAdminsPage: React.FC = () => {
           </div>
         )}
       </CardContent>
-      <CardFooter>
-        <div className="grid w-full max-w-sm items-center gap-1.5">
+       <CardFooter>
+{/*        <div className="grid w-full max-w-sm items-center gap-1.5">
             {user.role === UserRole.PLATFORM_ADMIN && companyId && (
               <Button onClick={() => setShowCreateAdminModal(true)}>
                 Criar Administrador
               </Button>
             )}
-        </div>
+        </div> */}
         </CardFooter>
         {contextMenu.visible && contextMenu.admin && (
           <div ref={contextMenuRef} className="absolute z-50 bg-white border border-gray-300 rounded-md shadow-lg py-1" style={{ top: contextMenu.y, left: contextMenu.x }}>
