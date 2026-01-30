@@ -1357,3 +1357,9 @@ export const uploadBackup = (file: File) => {
   formData.append('file', file);
   return apiFetch('/backups/upload', { method: 'POST', body: formData });
 };
+
+export const deleteBackup = (id: string) => 
+  apiFetch(`/backups/${id}`, { method: 'DELETE' });
+
+export const wipeSystem = () => 
+  apiFetch('/backups/danger/wipe-all', { method: 'POST' });

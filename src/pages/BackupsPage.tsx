@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/Table';
 import { Button } from '../components/ui/Button';
-import { Download, Database, Loader2, Plus, Search, Building2, RefreshCcw, Upload } from 'lucide-react';
-import { fetchBackups, generateBackup, fetchCompanies, restoreBackup, uploadBackup } from '../services/api';
+import { Download, Database, Loader2, Plus, Search, Building2, RefreshCcw, Upload, Trash2 } from 'lucide-react';
+import { fetchBackups, generateBackup, fetchCompanies, restoreBackup, uploadBackup, wipeSystem, deleteBackup } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/user';
 import toast from 'react-hot-toast';
@@ -100,6 +100,41 @@ const BackupsPage = () => {
     }
   };
 
+const deleteMutation = useMutation({
+  mutationFn: (id: string) => deleteBackup(id),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['backups'] });
+    toast.success('Backup removido.');
+  }
+});
+
+const handleDelete = (id: string, name: string) => {
+  if (window.confirm(`Deseja apagar o backup ${name}? O ficheiro será removido do VPS.`)) {
+    deleteMutation.mutate(id);
+  }
+};
+
+
+
+
+const handleWipeSystem = async () => {
+  const confirm = window.confirm("CUIDADO!!! Isto vai apagar TODAS as empresas, eventos e utilizadores (exceto Admins da Plataforma). Deseja continuar?");
+  if (confirm) {
+    const password = window.prompt("Para confirmar, digite 'LIMPAR' em maiúsculas:");
+    if (password === 'LIMPAR') {
+      try {
+        await wipeSystem();
+        toast.success("Sistema limpo! A base de dados está vazia.");
+        queryClient.invalidateQueries({ queryKey: ['backups'] });
+      } catch (e) {
+        toast.error("Erro na limpeza.");
+      }
+    }
+  }
+};
+
+
+
   return (
     <div className="space-y-6">
       <Card>
@@ -146,6 +181,15 @@ const BackupsPage = () => {
                   )}
                   Gerar Backup
                 </Button>
+
+<Button 
+  variant="destructive" 
+  onClick={handleWipeSystem}
+  className="bg-orange-600 hover:bg-orange-700"
+>
+  <Trash2 className="mr-2 h-4 w-4" /> Reset Base de Dados
+</Button>
+
               </>
             )}
           </div>
@@ -229,6 +273,12 @@ const BackupsPage = () => {
       )}
     </Button>
     )}
+  {user?.role === UserRole.PLATFORM_ADMIN && (
+    <Button variant="ghost" size="icon" onClick={() => handleDelete(b.id, b.fileName)} title="Eliminar Backup">
+      <Trash2 className="h-4 w-4 text-red-500" />
+    </Button>
+  )}  
+
 </TableCell>
                     </TableRow>
                   ))}
