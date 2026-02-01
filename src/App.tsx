@@ -207,6 +207,7 @@ function AppLayout() {
                     <Route path="/reset-password" element={<ResetPasswordPage />} />
                     <Route path="/minha-inscricao/:registrationId" element={<PublicRegistrationStatusPage />} />
                     <Route path="/feedback-evento/:registrationId" element={<PublicEventFeedbackPage />} />
+                    <Route path="/companies/:companyId/mail-config" element={<CompanySmtpConfigPage />} />
                     
                     {/* ROTA PÚBLICA DE AGENDAMENTO (IMPORTANTE: FORA DO SECURITY GUARD) */}
                     <Route path="/agendar/:companySlug/:profileSlug" element={<PublicBookingPage />} />

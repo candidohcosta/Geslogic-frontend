@@ -388,6 +388,18 @@ export const testSmtpConfig = ({ companyId, smtpData, recipientEmail }: { compan
   });
 };
 
+export const getGmailAuthUrl = async (companyId: string) => {
+  const response = await apiFetch(`/companies/${companyId}/mail-config/gmail-auth-url`);
+  // Como o teu backend devolve { url: '...' }, retornamos o objeto completo
+  // para que o componente possa desestruturar: const { url } = await getGmailAuthUrl(...)
+  return response; 
+};
+
+export const getMicrosoftAuthUrl = async (companyId: string) => {
+  const response = await apiFetch(`/companies/${companyId}/mail-config/microsoft-auth-url`);
+  return response;
+};
+
 // LOGS
 export const fetchLogs = (filters: { 
   page?: number; 
