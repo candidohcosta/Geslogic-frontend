@@ -1,10 +1,10 @@
 // frontend/src/context/NotificationContext.tsx
-
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react'; // Adicionar useRef
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { fetchNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../services/api';
-import io, { Socket } from 'socket.io-client';
 import toast, { Toaster } from 'react-hot-toast';
+import type { Socket } from 'socket.io-client';
+import { getSocket } from '../lib/socketClient';
 
 export interface Notification {
   id: string;
@@ -26,88 +26,159 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  
-  // Usamos uma ref para guardar o socket, evitando recriações desnecessárias
-  const socketRef = useRef<Socket | null>(null);
 
-  const loadNotifications = () => {
-      fetchNotifications().then(setNotifications).catch(console.error);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const socketRef = useRef<Socket | null>(null);
+  const didInitRef = useRef(false);
+  const isRefreshingRef = useRef(false);
+  const refreshTimerRef = useRef<number | null>(null);
+  const knownIdsRef = useRef<Set<string>>(new Set());
+
+  const scheduleRefresh = (delayMs = 750) => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    refreshTimerRef.current = window.setTimeout(async () => {
+      if (isRefreshingRef.current) return;
+      isRefreshingRef.current = true;
+      try {
+        const data = await fetchNotifications();
+        setNotifications(() => {
+          const next = Array.isArray(data) ? data : [];
+          knownIdsRef.current = new Set(next.map(n => n.id));
+          return next;
+        });
+      } catch {
+        // silenciar
+      } finally {
+        isRefreshingRef.current = false;
+      }
+    }, delayMs) as unknown as number;
+  };
+
+  const initialLoad = async () => {
+    isRefreshingRef.current = true;
+    try {
+      const data = await fetchNotifications();
+      setNotifications(() => {
+        const next = Array.isArray(data) ? data : [];
+        knownIdsRef.current = new Set(next.map(n => n.id));
+        return next;
+      });
+    } catch {
+      // silenciar
+    } finally {
+      isRefreshingRef.current = false;
+    }
   };
 
   useEffect(() => {
-    // SÓ INICIALIZA O SOCKET SE HOUVER UTILIZADOR LOGADO
-    if (user) {
-      loadNotifications();
-
-      // *** CORREÇÃO: Lógica Flexível para Socket URL ***
-      // Se tivermos um URL de API definido (como no .env), usamos.
-      let socketUrl = process.env.REACT_APP_API_BASE_URL ?? window.location.origin;
-      
-      // Remove o '/api' se estiver presente (porque o socket está na raiz da API)
-      if (socketUrl.endsWith('/api')) {
-          socketUrl = socketUrl.replace('/api', '');
+    return () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
       }
+    };
+  }, []);
 
-      const newSocket = io(socketUrl, { // AGORA USA A PORTA 3000 DO BACKEND
-        // O path /socket.io deve ser mantido
-        path: '/socket.io', 
-        transports: ['websocket'], 
-        withCredentials: true,
-        reconnection: true,
-      });
-
-      socketRef.current = newSocket;
-
-      // 2. Definir eventos
-      const joinChannel = () => {
-          // console.log(`[NotificationSocket] A entrar no canal: ${user.id}`);
-          newSocket.emit('join_user_channel', user.id);
-      };
-
-      newSocket.on('connect', joinChannel);
-      
-      // Se já conectou instantaneamente (ex: reconexão)
-      if (newSocket.connected) joinChannel();
-
-      const handleNewNotification = (newNotif: Notification) => {
-        setNotifications(prev => [newNotif, ...prev]);
-        const toastOpts = { id: newNotif.id };
-        switch (newNotif.type) {
-            case 'ERROR': toast.error(`${newNotif.title}: ${newNotif.message}`, toastOpts); break;
-            case 'SUCCESS': toast.success(`${newNotif.title}: ${newNotif.message}`, toastOpts); break;
-            case 'WARNING': toast.error(`${newNotif.title}: ${newNotif.message}`, { ...toastOpts, icon: '⚠️' }); break;
-            default: toast(`${newNotif.title}: ${newNotif.message}`, { ...toastOpts, icon: '🔔' });
-        }
-      };
-
-      const handleUpdateSignal = () => {
-          loadNotifications(); 
-      };
-
-      newSocket.on('NEW_SYSTEM_NOTIFICATION', handleNewNotification);
-      newSocket.on('NOTIFICATIONS_UPDATED', handleUpdateSignal);      
-
-      // 3. Limpeza ao desmontar ou ao fazer logout
-      return () => { 
-        if (newSocket) {
-            newSocket.emit('leave_user_channel', user.id); // Opcional, mas boa prática
-            newSocket.disconnect();
-        }
-      };
+  useEffect(() => {
+    if (!user) {
+      if (socketRef.current) {
+        try { socketRef.current.disconnect(); } catch {}
+        socketRef.current = null;
+      }
+      setNotifications([]);
+      knownIdsRef.current.clear();
+      didInitRef.current = false;
+      return;
     }
-  }, [user]); // Recria o socket apenas se o user mudar (login/logout)
+
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
+    initialLoad();
+
+    if (socketRef.current) {
+      try { socketRef.current.disconnect(); } catch {}
+      socketRef.current = null;
+    }
+
+    const s = getSocket({ forcePollingOnly: true }); // root namespace
+    socketRef.current = s;
+
+    const joinChannel = () => {
+      s.emit('join_user_channel', user.id);
+    };
+
+    const onConnect = () => {
+      joinChannel();
+      scheduleRefresh(250);
+    };
+
+    const onNewNotification = (newNotif: Notification) => {
+      if (newNotif?.id && knownIdsRef.current.has(newNotif.id)) return;
+
+      setNotifications(prev => {
+        if (newNotif?.id && prev.some(n => n.id === newNotif.id)) {
+          knownIdsRef.current.add(newNotif.id);
+          return prev;
+        }
+        const next = [newNotif, ...prev];
+        if (newNotif?.id) knownIdsRef.current.add(newNotif.id);
+
+        const toastOpts = newNotif?.id ? { id: newNotif.id } : undefined;
+        switch (newNotif.type) {
+          case 'ERROR':   toast.error(`${newNotif.title}: ${newNotif.message}`, toastOpts); break;
+          case 'SUCCESS': toast.success(`${newNotif.title}: ${newNotif.message}`, toastOpts); break;
+          case 'WARNING': toast(`${newNotif.title}: ${newNotif.message}`, { ...(toastOpts || {}), icon: '⚠️' }); break;
+          default:        toast(`${newNotif.title}: ${newNotif.message}`, { ...(toastOpts || {}), icon: '🔔' });
+        }
+        return next;
+      });
+    };
+
+    const onUpdateSignal = () => {
+      scheduleRefresh(750);
+    };
+
+    const onDisconnect = () => {};
+    const onConnectError = (_err: unknown) => {};
+
+    s.on('connect', onConnect);
+    s.on('NEW_SYSTEM_NOTIFICATION', onNewNotification);
+    s.on('NOTIFICATIONS_UPDATED', onUpdateSignal);
+    s.on('OPERATOR_SESSION_FORCE_CLOSED', () => {
+      window.dispatchEvent(new CustomEvent('operator:forceClosed'));
+    });
+    s.on('disconnect', onDisconnect);
+    s.on('connect_error', onConnectError);
+
+    return () => {
+      try { s.emit('leave_user_channel', user.id); } catch {}
+      s.off('connect', onConnect);
+      s.off('NEW_SYSTEM_NOTIFICATION', onNewNotification);
+      s.off('NOTIFICATIONS_UPDATED', onUpdateSignal);
+      s.off('OPERATOR_SESSION_FORCE_CLOSED');
+      s.off('disconnect', onDisconnect);
+      s.off('connect_error', onConnectError);
+      // não precisamos desconectar o root aqui — pode ser partilhado
+      socketRef.current = null;
+      didInitRef.current = false;
+    };
+  }, [user]);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const markAsRead = async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-    await markNotificationAsRead(id);
+    try { await markNotificationAsRead(id); } catch {}
   };
-  
+
   const markAllAsRead = async () => {
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-      await markAllNotificationsAsRead();
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    try { await markAllNotificationsAsRead(); } catch {}
   };
 
   return (
@@ -119,7 +190,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 };
 
 export const useNotifications = () => {
-    const context = useContext(NotificationContext);
-    if (!context) throw new Error("useNotifications must be used within NotificationProvider");
-    return context;
+  const context = useContext(NotificationContext);
+  if (!context) throw new Error("useNotifications must be used within NotificationProvider");
+  return context;
 };

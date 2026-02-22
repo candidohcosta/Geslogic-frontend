@@ -1,167 +1,347 @@
 // frontend/src/pages/EditCompanyAdminPage.tsx
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, Navigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchCompanyAdminById, updateCompanyAdmin } from '../services/api'; // Precisaremos destas funções
-import { UserData, UserRole } from '../types/user';
-import { Button } from '../components/ui/Button';
+
+import { fetchCompanyAdminById, updateCompanyAdmin } from '../services/api';
+import { UserRole } from '../types/user';
+
+import { DetailFormTemplate } from '../components/templates/DetailFormTemplate';
 import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
 import { Checkbox } from '../components/ui/Checkbox';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { CardDescription } from '../components/ui/Card';
+import { ShieldUser, Loader2, Building2, Mail } from 'lucide-react';
+import toast from 'react-hot-toast';
 
-// Interface para os dados do Company Admin (para exibição e edição)
-interface CompanyAdminData {
+type CompanyAdminData = {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
   isActive: boolean;
-  company?: {
-    id: string;
-    name: string;
-  };
-}
+  company?: { id: string; name: string };
+};
 
-const EditCompanyAdminPage: React.FC = () => {
+export default function EditCompanyAdminPage() {
   const navigate = useNavigate();
-  const { adminId } = useParams<{ adminId: string }>();
-  const { user } = useAuth();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { adminId } = useParams<{ adminId: string }>();
 
-  // Estados locais para o formulário
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [password, setPassword] = useState(''); // Para nova password
-  const [confirmPassword, setConfirmPassword] = useState(''); // Para confirmar nova password
-  const [isActive, setIsActive] = useState(true); // Estado para o status ativo/inativo
-  const [success, setSuccess] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Pode vir da lista (UX mais rápida)
+  const preloadedAdmin = (location.state as any)?.admin as CompanyAdminData | undefined;
 
-  // useQuery para buscar os detalhes do administrador
-  const { data: adminDetails, isLoading, error: queryError } = useQuery<CompanyAdminData, Error>({
+  // === Guardas de acesso ===
+  const isPlatformAdmin = user?.role === UserRole.PLATFORM_ADMIN;
+  const isCompanyAdmin  = user?.role === UserRole.COMPANY_ADMIN;
+
+  // Para comparar empresas no frontend (além do backend)
+  const currentCompanyId: string | undefined =
+    (user as any)?.company?.id || (user as any)?.companyId || undefined;
+
+  // === Carregar dados (só se não vier preloaded) ===
+  const {
+    data: adminRemote,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<CompanyAdminData, Error>({
     queryKey: ['companyAdmin', adminId],
     queryFn: () => fetchCompanyAdminById(adminId!),
-    enabled: !!adminId && user?.role === UserRole.PLATFORM_ADMIN,
+    enabled: !!adminId && !preloadedAdmin,
   });
 
-  // Efeito para popular o formulário quando os dados chegam
-  useEffect(() => {
-    if (adminDetails) {
-      setFirstName(adminDetails.firstName);
-      setLastName(adminDetails.lastName);
-      setIsActive(adminDetails.isActive);
-    }
-  }, [adminDetails]);
+  // Preferimos o admin do state; caso contrário o remoto
+  const admin = preloadedAdmin ?? adminRemote ?? null;
 
-  // useMutation para atualizar o administrador
-  const { mutate: updateAdminMutate, isPending: isUpdating, error: updateError } = useMutation<any, Error, { adminId: string; adminData: any }>({
-    mutationFn: updateCompanyAdmin,
+  // COMPANY_ADMIN só pode editar admins da sua empresa
+  const isForbiddenForCompanyAdmin =
+    !!admin &&
+    isCompanyAdmin &&
+    (!!admin.company?.id && !!currentCompanyId) &&
+    admin.company.id !== currentCompanyId;
+
+  // === Estado do formulário ===
+  const [firstName, setFirstName] = useState<string>(admin?.firstName ?? '');
+  const [lastName, setLastName]   = useState<string>(admin?.lastName ?? '');
+  const [password, setPassword]   = useState<string>('');       // opcional
+  const [confirmPassword, setConfirmPassword] = useState<string>(''); // opcional
+  const [isActive, setIsActive]   = useState<boolean>(admin?.isActive ?? true);
+
+  // Inicializar quando admin chega/atualiza
+  useEffect(() => {
+    if (admin) {
+      setFirstName(admin.firstName || '');
+      setLastName(admin.lastName || '');
+      setIsActive(Boolean(admin.isActive));
+    }
+  }, [admin]);
+
+  // === Mutation: atualizar ===
+  const updateMutation = useMutation({
+    mutationFn: updateCompanyAdmin, // ({ adminId, adminData })
     onSuccess: () => {
-      setSuccess('Administrador atualizado com sucesso!');
+      toast.success('Administrador atualizado com sucesso!');
       queryClient.invalidateQueries({ queryKey: ['companyAdmin', adminId] });
-      queryClient.invalidateQueries({ queryKey: ['companyAdmins'] }); // Invalida a lista geral
+      queryClient.invalidateQueries({ queryKey: ['companyAdmins'] });
       setPassword('');
       setConfirmPassword('');
     },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Erro ao atualizar administrador.');
+    },
   });
 
-  // Handler para o submit do formulário
- const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSuccess(null);
-    setFormError(null);
+  // === Validações UX ===
+  const canSave =
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    (!password || (password.length >= 6 && password === confirmPassword));
 
-    if (!firstName || !lastName) {
-      setFormError('Por favor, preencha o primeiro e último nome.');
-      return;
-    }
-    if (password && password !== confirmPassword) {
-      setFormError('As passwords não coincidem.');
-      return;
-    }
-    if (password && password.length < 6) {
-      setFormError('A nova password deve ter pelo menos 6 caracteres.');
+  const handleSave = () => {
+    if (!adminId || !admin) return;
+
+    // Proteção extra no frontend (além do backend)
+    if (isForbiddenForCompanyAdmin) {
+      toast.error('Sem autorização para editar administradores de outra empresa.');
       return;
     }
 
-    const updateData: any = { firstName, lastName, isActive };
-    if (password) {
-      updateData.password = password;
+    if (!canSave) {
+      if (!firstName.trim() || !lastName.trim()) {
+        toast.error('Por favor, preencha o primeiro e último nome.');
+        return;
+      }
+      if (password && password !== confirmPassword) {
+        toast.error('As passwords não coincidem.');
+        return;
+      }
+      if (password && password.length < 6) {
+        toast.error('A nova password deve ter pelo menos 6 caracteres.');
+        return;
+      }
     }
 
-    updateAdminMutate({ adminId: adminId!, adminData: updateData });
+    const adminData: any = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      isActive,
+    };
+    if (password) adminData.password = password;
+
+    updateMutation.mutate({ adminId, adminData });
   };
 
-  // Salvaguardas e estados de loading/error
-  if (!user || user.role !== UserRole.PLATFORM_ADMIN) return <Navigate to="/dashboard" />;
-  if (isLoading) return <div className="text-center p-6">A carregar detalhes...</div>;
-  if (queryError) return <div className="text-center p-6 text-red-500">Erro: {queryError.message}</div>;
-  if (!adminDetails) return <div className="text-center p-6">Administrador não encontrado.</div>;
+  const handleCancel = () => navigate(-1);
 
-  return (
-    <div className="flex-grow flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <CardTitle>Editar Administrador</CardTitle>
-          <CardDescription>
-            A editar o perfil de {adminDetails.firstName} {adminDetails.lastName}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* Mensagens de feedback */}
-          {formError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{formError}</div>}
-          {updateError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{(updateError as Error).message}</div>}
-          {success && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">{success}</div>}
-
-          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-            <div className="grid w-full items-center gap-1.5">
+  // === Secções (DetailFormTemplate) ===
+  const sections = useMemo(() => {
+    const dadosSection = {
+      title: 'Dados do Utilizador',
+      description: 'Informação base do administrador da empresa.',
+      accent: true,
+      content: (
+        <div className="space-y-4">
+          {/* Nome + Apelido */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-1.5">
               <Label htmlFor="firstName">Primeiro Nome <span className="text-red-500">*</span></Label>
-              <Input type="text" id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+              <Input
+                id="firstName"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="Ex.: Ana"
+                disabled={isForbiddenForCompanyAdmin}
+              />
             </div>
-            <div className="grid w-full items-center gap-1.5">
+            <div className="grid gap-1.5">
               <Label htmlFor="lastName">Último Nome <span className="text-red-500">*</span></Label>
-              <Input type="text" id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+              <Input
+                id="lastName"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Ex.: Silva"
+                disabled={isForbiddenForCompanyAdmin}
+              />
             </div>
-            <div className="grid w-full items-center gap-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input type="email" id="email" value={adminDetails.email} readOnly />
+          </div>
+
+          {/* Email (só leitura) */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="email" className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-gray-500" /> Email
+            </Label>
+            <Input id="email" type="email" value={admin?.email ?? ''} readOnly />
+            <CardDescription>O email é o utilizador de autenticação e não pode ser alterado.</CardDescription>
+          </div>
+
+          {/* Empresa (só leitura) */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="companyName" className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-gray-500" /> Empresa
+            </Label>
+            <Input id="companyName" value={admin?.company?.name || 'N/A'} readOnly />
+          </div>
+        </div>
+      ),
+    };
+
+    const segurancaSection = {
+      title: 'Segurança',
+      description: 'Defina uma nova password (opcional).',
+      accent: true,
+      content: (
+        <div className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="password">Nova Password</Label>
+              <Input
+                id="password"
+                type="password"
+                minLength={10}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 10 caracteres"
+                disabled={isForbiddenForCompanyAdmin}
+              />
             </div>
-            <div className="grid w-full items-center gap-1.5">
-              <Label htmlFor="companyName">Empresa</Label>
-              <Input type="text" id="companyName" value={adminDetails.company?.name || 'N/A'} readOnly />
+            <div className="grid gap-1.5">
+              <Label htmlFor="confirmPassword">Confirmar Nova Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                minLength={10}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita a nova password"
+                disabled={isForbiddenForCompanyAdmin}
+              />
             </div>
-            <div className="border-t border-gray-200 pt-4 mt-4">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Alterar Password (Opcional)</h3>
-              <div className="space-y-4">
-                <div className="grid w-full items-center gap-1.5">
-                  <Label htmlFor="password">Nova Password</Label>
-                  <Input type="password" id="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} />
-                </div>
-                <div className="grid w-full items-center gap-1.5">
-                  <Label htmlFor="confirmPassword">Confirmar Nova Password</Label>
-                  <Input type="password" id="confirmPassword" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={6} />
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2 pt-4">
-              <Checkbox id="isActive" checked={isActive} onCheckedChange={(checked) => setIsActive(Boolean(checked))} />
-              <Label htmlFor="isActive">Administrador Ativo</Label>
-            </div>
-            <Button type="submit" className="w-full" disabled={isUpdating}>
-              {isUpdating ? 'A Guardar...' : 'Guardar Alterações'}
-            </Button>
-          </form>
-        </CardContent>
-        <CardFooter>
-          <Button variant="ghost" className="w-full" onClick={() => navigate(-1)}>
-            Voltar
-          </Button>
-        </CardFooter>
-      </Card>
+          </div>
+          <CardDescription>
+            Se não pretender alterar a password, deixe estes campos em branco.
+          </CardDescription>
+        </div>
+      ),
+    };
+
+    const estadoSection = {
+      title: 'Estado',
+      description: 'Ative/desative o acesso deste administrador.',
+      accent: true,
+      content: (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="isActive"
+            checked={isActive}
+            onCheckedChange={(checked) => setIsActive(Boolean(checked))}
+            disabled={isForbiddenForCompanyAdmin}
+          />
+          <Label htmlFor="isActive">Administrador Ativo</Label>
+        </div>
+      ),
+    };
+
+    return [dadosSection, segurancaSection, estadoSection];
+  }, [admin, firstName, lastName, password, confirmPassword, isActive, isForbiddenForCompanyAdmin]);
+
+  // === Ações (footer) ===
+  const footerActions = (
+    <>
+      <Button variant="outline" size="sm" onClick={handleCancel}>
+        Voltar
+      </Button>
+      <Button
+        onClick={handleSave}
+        size="sm"
+        disabled={
+          updateMutation.isPending ||
+          !canSave ||
+          (!admin && !preloadedAdmin && isLoading) ||
+          isForbiddenForCompanyAdmin
+        }
+      >
+        {updateMutation.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> A Guardar…
+          </>
+        ) : 'Guardar Alterações'}
+      </Button>
+    </>
+  );
+
+  // === Ações (header) — iguais ao footer ===
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" onClick={handleCancel}>
+        Voltar
+      </Button>
+      <Button
+        onClick={handleSave}
+        size="sm"
+        disabled={
+          updateMutation.isPending ||
+          !canSave ||
+          (!admin && !preloadedAdmin && isLoading) ||
+          isForbiddenForCompanyAdmin
+        }
+      >
+        {updateMutation.isPending ? (
+          <>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> A Guardar…
+          </>
+        ) : 'Guardar Alterações'}
+      </Button>
     </div>
   );
-};
 
-export default EditCompanyAdminPage;
+  // Se não for PA nem CA → fora
+  if (!user || (!isPlatformAdmin && !isCompanyAdmin)) {
+    return <Navigate to="/dashboard" />;
+  }  
+  // === Estados de carregamento/erro (quando não veio do state) ===
+  if (!preloadedAdmin && isLoading) {
+    return <div className="p-6">A carregar detalhes…</div>;
+  }
+  if (!preloadedAdmin && isError) {
+    return <div className="p-6 text-red-600">Erro: {(error as Error)?.message || 'Falha ao obter administrador.'}</div>;
+  }
+  if (!admin) {
+    return <div className="p-6">Administrador não encontrado.</div>;
+  }
+
+  // COMPANY_ADMIN a tentar aceder a admin de outra empresa → 403 UX
+  if (isForbiddenForCompanyAdmin) {
+    return (
+      <div className="p-6 text-red-600">
+        Sem autorização para editar um administrador de outra empresa.
+      </div>
+    );
+  }
+
+  return (
+    <DetailFormTemplate
+      header={{
+        icon: ShieldUser,
+        title: 'Editar Administrador de Empresa',
+        subtitle: (
+          <>
+            {admin.company?.name ? (
+              <>Empresa: <b>{admin.company.name}</b> — Utilizador: <b>{admin.firstName} {admin.lastName}</b> ({admin.email})</>
+            ) : (
+              <>Utilizador: <b>{admin.firstName} {admin.lastName}</b> ({admin.email})</>
+            )}
+          </>
+        ),
+        actions: headerActions,
+      }}
+      sections={sections}
+      actions={footerActions}
+      columnsMd={2}
+    />
+  );
+}

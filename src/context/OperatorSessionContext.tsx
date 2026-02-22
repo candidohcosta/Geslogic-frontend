@@ -69,6 +69,28 @@ export const OperatorSessionProvider: React.FC<{ children: ReactNode }> = ({ chi
     }
   }, [data, isLoadingSession]);
 
+  // A) Responder ao "force close" em tempo real
+  useEffect(() => {
+    const onForceClosed = () => {
+      setSessionId(null);
+      setSessionDetails(null);
+      setCurrentTicket(null);
+      try { sessionStorage.removeItem('operatorSessionId'); } catch {}
+      try { refetchSession(); } catch {}
+    };
+    window.addEventListener('operator:forceClosed', onForceClosed);
+    return () => window.removeEventListener('operator:forceClosed', onForceClosed);
+  }, [refetchSession]);
+
+  // B) Fallback: revalidar periodicamente e ao focar a janela
+  useEffect(() => {
+    const t = setInterval(() => { try { refetchSession(); } catch {} }, 15000);
+    const onFocus = () => { try { refetchSession(); } catch {} };
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(t); window.removeEventListener('focus', onFocus); };
+  }, [refetchSession]);
+
+
   // Ações Manuais (para otimismo na UI)
   const startSession = (sessionData: SessionStartData) => {
     setSessionId(sessionData.id);

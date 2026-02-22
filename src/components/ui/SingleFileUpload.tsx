@@ -140,3 +140,4 @@ export const SingleFileUpload: React.FC<SingleFileUploadProps> = ({
     </div>
   );
 };
+export default SingleFileUpload;

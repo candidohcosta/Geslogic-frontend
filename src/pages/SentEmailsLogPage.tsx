@@ -1,39 +1,87 @@
-// frontend/src/pages/SentEmailsLogPage.tsx (VERSÃO FINAL E COMPLETA)
+// frontend/src/pages/SentEmailsLogPage.tsx
 
-import React, { useState, useMemo, useRef  } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { fetchSentEmails, fetchSentEmailLogDetails } from '../services/api'; // Adicionar a nova função
+import { fetchSentEmails, fetchSentEmailLogDetails } from '../services/api';
 import { UserRole } from '../types/user';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
+
+// Templates
+import { ListPageTemplate } from '../components/templates/ListPageTemplate';
+import type { Column, SortOrder } from '../components/templates/types';
+
+// UI
+import {
+  Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter
+} from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "../components/ui/Table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '../components/ui/Select';
+
 import { useDebounce } from '../hooks/useDebounce';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { Send } from 'lucide-react';
+
+// ---------- Larguras (um único source of truth) ----------
+const COLS = {
+  date: 18,       // Data
+  recipient: 28,  // Destinatário
+  subject: 36,    // Assunto
+  status: 14,     // Estado
+} as const;
+
+const FILTER_GRID_TEMPLATE = `${COLS.date}% ${COLS.recipient}% ${COLS.subject}% ${COLS.status}%`;
 
 // Interfaces
 interface SentEmailLogData {
-  id: string; timestamp: string; status: 'SENT' | 'FAILED'; recipient: string;
-  subject: string; body: string; errorMessage?: string;
-  company?: { name: string }; triggeredBy?: { email: string };
+  id: string;
+  timestamp: string;
+  status: 'SENT' | 'FAILED';
+  recipient: string;
+  subject: string;
+  body: string;
+  errorMessage?: string;
+  company?: { name: string };
+  triggeredBy?: { email: string };
 }
-interface EmailsApiResponse { data: SentEmailLogData[]; total: number; page: number; limit: number; }
+
+interface EmailsApiResponse {
+  data: SentEmailLogData[];
+  total: number;
+  page: number;
+  limit: number;
+}
 
 const SentEmailsLogPage: React.FC = () => {
   const { user } = useAuth();
+
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ recipient: '', subject: '' });
+
+  // Filtros (inclui datas e estado)
+  const [filters, setFilters] = useState({
+    recipient: '',
+    subject: '',
+    startDate: '',
+    endDate: '',
+    status: '' as '' | 'SENT' | 'FAILED',
+  });
+
   const debouncedFilters = useDebounce(filters, 500);
+
   const [sortBy, setSortBy] = useState('timestamp');
-  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('DESC');
+
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
-  const emailContentRef = useRef<HTMLDivElement>(null); 
+  const emailContentRef = useRef<HTMLDivElement>(null);
 
-
-  const queryFilters = useMemo(() => ({ page, ...debouncedFilters, sortBy, sortOrder }), [page, debouncedFilters, sortBy, sortOrder]);
+  const queryFilters = useMemo(
+    () => ({ page, ...debouncedFilters, sortBy, sortOrder }),
+    [page, debouncedFilters, sortBy, sortOrder]
+  );
 
   const { data: emailsData, isLoading, error } = useQuery<EmailsApiResponse, Error>({
     queryKey: ['sentEmails', queryFilters],
@@ -42,7 +90,6 @@ const SentEmailsLogPage: React.FC = () => {
     enabled: !!user,
   });
 
-  // NOVA QUERY para os detalhes do modal
   const { data: logDetails, isLoading: isLoadingDetails } = useQuery<SentEmailLogData, Error>({
     queryKey: ['sentEmailDetails', selectedLogId],
     queryFn: () => fetchSentEmailLogDetails(selectedLogId!),
@@ -53,26 +100,31 @@ const SentEmailsLogPage: React.FC = () => {
     const input = emailContentRef.current;
     if (!input || !logDetails) return;
 
-    html2canvas(input, { scale: 2 }) // Aumentar a escala para melhor resolução
-      .then((canvas) => {
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'pt',
-          format: 'a4',
-        });
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`email_${logDetails?.recipient}_${new Date().toISOString().split('T')[0]}.pdf`);
+    html2canvas(input, { scale: 2 }).then((canvas) => {
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4',
       });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`email_${logDetails?.recipient}_${new Date().toISOString().split('T')[0]}.pdf`);
+    });
   };
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
     setPage(1);
   };
+
+  const handleSelectFilterChange = (name: 'status', value: string) => {
+    setFilters(prev => ({ ...prev, [name]: (value === 'all' ? '' : (value as 'SENT' | 'FAILED')) }));
+    setPage(1);
+  };
+
   const handleSort = (columnName: string) => {
     if (sortBy === columnName) {
       setSortOrder(current => (current === 'ASC' ? 'DESC' : 'ASC'));
@@ -82,97 +134,183 @@ const SentEmailsLogPage: React.FC = () => {
     }
   };
 
-  if (!user || (user.role !== UserRole.PLATFORM_ADMIN && user.role !== UserRole.COMPANY_ADMIN)) return <Navigate to="/dashboard" />;
+  if (!user || (user.role !== UserRole.PLATFORM_ADMIN && user.role !== UserRole.COMPANY_ADMIN)) {
+    return <Navigate to="/dashboard" />;
+  }
+
+  // --- Colunas da Tabela (ListPageTemplate) ---
+  const columns: Column<SentEmailLogData>[] = [
+    {
+      key: 'timestamp',
+      header: 'Data',
+      widthPct: COLS.date,
+      sortable: true,
+      render: (row) => new Date(row.timestamp).toLocaleString(),
+    },
+    {
+      key: 'recipient',
+      header: 'Destinatário',
+      widthPct: COLS.recipient,
+      sortable: true,
+      render: (row) => (
+        <span className="block w-full truncate" title={row.recipient}>
+          {row.recipient}
+        </span>
+      ),
+    },
+    {
+      key: 'subject',
+      header: 'Assunto',
+      widthPct: COLS.subject,
+      sortable: true,
+      render: (row) => (
+        <span className="block w-full truncate" title={row.subject}>
+          {row.subject}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Estado',
+      widthPct: COLS.status,
+      sortable: true,
+      render: (row) => (
+        <span className={row.status === 'SENT' ? 'text-green-600' : 'text-red-600'}>
+          {row.status}
+        </span>
+      ),
+    },
+  ];
+
+  // Estado vazio custom (mostra loading/erro/sem resultados)
+  const tableEmptyState = (
+    <div className="py-10 text-center text-sm">
+      {isLoading ? 'A carregar…' : error ? <span className="text-red-600">{error.message}</span> : 'Sem resultados para os filtros atuais.'}
+    </div>
+  );
 
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Histórico de Emails Enviados</CardTitle>
-          <CardDescription>Consulte todos os emails enviados pela plataforma ou pela sua empresa.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <p>A carregar...</p>}
-          {error && <p className="text-red-500">{error.message}</p>}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('timestamp')}>
-                      Data
-                      {sortBy === 'timestamp' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('recipient')}>
-                      Destinatário
-                      {sortBy === 'recipient' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('subject')}>
-                      Assunto
-                      {sortBy === 'subject' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('status')}>
-                      Estado
-                      {sortBy === 'status' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
-                    </Button>
-                  </TableHead>
-                </TableRow>
-                <TableRow>
-                  <TableHead className="p-1"></TableHead>
-                  <TableHead className="p-1"><Input name="recipient" placeholder="Pesquisar..." value={filters.recipient} onChange={handleFilterChange} /></TableHead>
-                  <TableHead className="p-1"><Input name="subject" placeholder="Pesquisar..." value={filters.subject} onChange={handleFilterChange} /></TableHead>
-                  <TableHead className="p-1"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {emailsData?.data.map((log) => (
-                  <TableRow key={log.id} onDoubleClick={() => setSelectedLogId(log.id)} className="cursor-pointer">
-                    <TableCell>{new Date(log.timestamp).toLocaleString()}</TableCell>
-                    <TableCell>{log.recipient}</TableCell>
-                    <TableCell>{log.subject}</TableCell>
-                    <TableCell><span className={log.status === 'SENT' ? 'text-green-600' : 'text-red-600'}>{log.status}</span></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          {/* Paginação */}
-        </CardContent>
-      </Card>
+    <ListPageTemplate<SentEmailLogData>
+      header={{
+        icon: Send,
+        title: 'Histórico de Emails Enviados',
+        subtitle: 'Consulte todos os emails enviados pela plataforma ou pela sua empresa.',
+      }}
 
-      {/* MODAL DE DETALHES */}
-{selectedLogId && (
-  <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 " onClick={() => setSelectedLogId(null)}>
-    <Card ref={emailContentRef} className="w-full max-w-4xl h-[90vh] flex flex-col pl-[75px] pr-[50px]" onClick={(e) => e.stopPropagation()}>
-      <CardHeader>
-        <CardTitle>Detalhes do Email</CardTitle>
-        <CardDescription>Para: <strong>{logDetails?.recipient}</strong> | Assunto: <strong>{logDetails?.subject}</strong></CardDescription>
-      </CardHeader>
-      
-      {/* O CardContent agora tem a ref e a lógica de renderização correta */}
-      <CardContent className="flex-grow overflow-y-auto bg-white p-4 border rounded-md">
-        {isLoadingDetails ? <p>A carregar corpo do email...</p> : (
-          <div>
-            {/* Usamos o 'dangerouslySetInnerHTML' para renderizar o corpo do email */}
-            <div dangerouslySetInnerHTML={{ __html: logDetails?.body || '' }} />
+      filters={{
+        colsTemplate: FILTER_GRID_TEMPLATE,
+        accent: true,
+        children: (
+          <>
+            {/* Data (start/end) */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[11px] font-medium text-gray-600">Data início</label>
+                <Input
+                  type="date"
+                  name="startDate"
+                  value={filters.startDate}
+                  onChange={handleFilterChange}
+                  className="h-8 px-2"
+                />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[11px] font-medium text-gray-600">Data fim</label>
+                <Input
+                  type="date"
+                  name="endDate"
+                  value={filters.endDate}
+                  onChange={handleFilterChange}
+                  className="h-8 px-2"
+                />
+              </div>
+            </div>
+
+            {/* Destinatário */}
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[11px] font-medium text-gray-600">Destinatário</label>
+              <Input
+                name="recipient"
+                placeholder="Pesquisar…"
+                value={filters.recipient}
+                onChange={handleFilterChange}
+                className="h-8 px-2"
+              />
+            </div>
+
+            {/* Assunto */}
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[11px] font-medium text-gray-600">Assunto</label>
+              <Input
+                name="subject"
+                placeholder="Pesquisar…"
+                value={filters.subject}
+                onChange={handleFilterChange}
+                className="h-8 px-2"
+              />
+            </div>
+
+            {/* Estado */}
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[11px] font-medium text-gray-600">Estado</label>
+              <Select
+                value={filters.status || 'all'}
+                onValueChange={(value) => handleSelectFilterChange('status', value)}
+              >
+                <SelectTrigger className="h-8 w-full px-2">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="SENT">SENT</SelectItem>
+                  <SelectItem value="FAILED">FAILED</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ),
+      }}
+
+      toolbar={
+        <>
+          <div className="text-sm text-gray-700">
+            Total de {emailsData?.total ?? 0} registos. Página {emailsData?.page ?? page}.
           </div>
-        )}
-      </CardContent>
-      
-      <CardFooter className="justify-end space-x-2 border-t pt-4">
-        <Button variant="outline" onClick={() => setSelectedLogId(null)}>Fechar</Button>
-        <Button onClick={handleExportPdf}>Exportar para PDF</Button>
-      </CardFooter>
-    </Card>
-  </div>
-)}
-    </>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              disabled={page === 1 || isLoading}
+            >
+              Anterior
+            </Button>
+            <Button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={
+                !emailsData ||
+                emailsData.data.length < (emailsData.limit || 0) ||
+                isLoading
+              }
+            >
+              Próxima
+            </Button>
+          </div>
+        </>
+      }
+
+      table={{
+        columns,
+        data: emailsData?.data ?? [],
+        rowKey: (row) => row.id,
+        sortBy,
+        sortOrder,
+        onSort: handleSort,
+        onRowClick: (row) => setSelectedLogId(row.id),
+        emptyState: tableEmptyState,
+        stickyHeader: true,
+        tableClassName: 'text-sm',
+        rowClassName: (row) => (row.status === 'FAILED' ? 'bg-red-50' : ''), // opcional (ver nota abaixo)
+      }}
+    />
   );
 };
 

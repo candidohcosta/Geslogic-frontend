@@ -69,6 +69,7 @@ export interface UserData {
   // Opcional: token de atualização para lógica interna, se necessário
   //refreshToken?: string; 
   eventStaffDetails?: EventStaffDetailsData;
+  grants?: string[]; // lista de FeatureKey atribuídas pelo backend
 }
 
 // Interface para os detalhes do participante no registo

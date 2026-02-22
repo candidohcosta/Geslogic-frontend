@@ -1,10 +1,8 @@
-// frontend/src/pages/LoginForm.tsx
-
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/user';
-import { loginUser, verify2FA, logoutUser } from '../services/api'; 
+import { loginUser, verify2FA, logoutUser, fetchMyActiveSession } from '../services/api';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
@@ -39,38 +37,60 @@ const LoginForm: React.FC = () => {
     window.location.reload();
   };
 
-  const handleSuccessRedirect = (user: any) => {  //VERSÃO ANTIGA
-  //const handleSuccessRedirect = (user: any, initialToken: string | null = null) => { 
-    if (user.is2FASetupRequired) { 
-        navigate('/setup-required');
-        return;
+  /**
+   * Redirecionamento central após login (com ou sem 2FA),
+   * com regra especial para OPERADOR:
+   *  - se tiver sessão ativa -> /operator/dashboard
+   *  - senão -> /operator/setup
+   * Outros perfis mantêm o comportamento atual.
+   */
+  const handleSuccessRedirect = async (user: any) => {
+    if (user.is2FASetupRequired) {
+      navigate('/setup-required');
+      return;
     }
-    // REDIRECIONAMENTO DE STAFF (NOVO)
-    if (user.role === UserRole.EVENT_STAFF) {
-        const staffRole = user.eventStaffDetails?.staffRole;
 
-        // Se for Porteiro -> App de Check-in
-        if (staffRole === 'CHECKIN') {
-            navigate('/event-checkin'); 
-            return;
-        }
-        
-        // Se for Gestor -> Lista de Eventos (Dashboard deles)
-        if (staffRole === 'MANAGEMENT') {
-            navigate('/events/list'); 
-            return;
-        }
-    }    
+    // STAFF (mantém)
+    if (user.role === UserRole.EVENT_STAFF) {
+      const staffRole = user.eventStaffDetails?.staffRole;
+
+      if (staffRole === 'CHECKIN') {
+        navigate('/event-checkin');
+        return;
+      }
+      if (staffRole === 'MANAGEMENT') {
+        navigate('/events/list');
+        return;
+      }
+    }
+
+    // NOVO: OPERADOR → ignorar return=/operator/setup; decidir com base na sessão ativa
+    if (user.role === UserRole.OPERATOR) {
+      try {
+        const active = await fetchMyActiveSession().catch(() => null);
+        const hasActive = !!(active && active.id);
+        // Usamos window.location.href como no teu padrão para evitar problemas de F5
+        window.location.href = hasActive ? '/operator/dashboard' : '/operator/setup';
+        return;
+      } catch {
+        // Em caso de falha na verificação, default seguro: ir para setup
+        window.location.href = '/operator/setup';
+        return;
+      }
+    }
+
+    // COMPANY_ADMIN com subdomínio (mantém)
     if (user.role === UserRole.COMPANY_ADMIN && user.companySlug) {
       const { protocol, port } = window.location;
       const mainDomain = process.env.REACT_APP_MAIN_DOMAIN || 'localhost';
       const targetPort = port ? `:${port}` : ''; 
       const newUrl = `${protocol}//${user.companySlug}.${mainDomain}${targetPort}/dashboard`;
       window.location.href = newUrl;
-    } else {
-      //navigate('/dashboard', { replace: true });
-      window.location.href = '/dashboard';
+      return;
     }
+
+    // Restantes perfis (mantém)
+    window.location.href = '/dashboard';
   };
 
   // Passo 1: Enviar Credenciais
@@ -83,22 +103,21 @@ const LoginForm: React.FC = () => {
       const data = await loginUser(email, password);
 
       if (data.requiresTwoFactor) {
-        setTempToken(data.tempAccessToken); 
+        setTempToken(data.tempAccessToken);
         setTwoFactorMethod(data.method);
         setUiState('2fa_input'); // Muda para o ecrã de código
       } else {
         const userToLogin = { ...data.user, is2FASetupRequired: data.is2FASetupRequired };
-        if (data.is2FASetupRequired) {
-          login(userToLogin); 
-          handleSuccessRedirect(userToLogin); 
-        } else {
-            // 1. Atualizamos o estado GLOBAL do AuthContext com os dados do JSON
-             login(userToLogin);
-             // 2. Redirecionamos IMEDIATAMENTE (pode ser navigate, já não precisa de window.location.href)
-//             handleSuccessRedirect(userToLogin); //CORRECAO PARA O F5 NO VPS
-            window.location.href = '/dashboard'; 
-            return;
 
+        if (data.is2FASetupRequired) {
+          login(userToLogin);
+          await handleSuccessRedirect(userToLogin);
+        } else {
+          // 1. Atualizamos o estado GLOBAL do AuthContext com os dados do JSON
+          login(userToLogin);
+          // 2. Redirecionamos imediatamente conforme o perfil
+          await handleSuccessRedirect(userToLogin);
+          return;
         }
       }
     } catch (error: any) {
@@ -113,11 +132,11 @@ const LoginForm: React.FC = () => {
     const val = e.target.value.replace(/[^0-9]/g, '');
     
     if (val.length <= 6) {
-        setOtpCode(val);
-        // LÓGICA DE ESTADO: Se chegar a 6, bloqueia UI e abre modal
-        if (val.length === 6) {
-            setUiState('2fa_decision');
-        }
+      setOtpCode(val);
+      // LÓGICA DE ESTADO: Se chegar a 6, bloqueia UI e abre modal
+      if (val.length === 6) {
+        setUiState('2fa_decision');
+      }
     }
   };
 
@@ -134,11 +153,10 @@ const LoginForm: React.FC = () => {
     try {
       const data = await verify2FA(otpCode, tempToken, isTrusted);
       login(data.user); // Atualiza o estado
-      handleSuccessRedirect(data.user); //CORRECAO PARA O F5 NO VPS
-      //handleSuccessRedirect(data.user, data.accessToken);
+      await handleSuccessRedirect(data.user);
     } catch (error: any) {
       setMessage('Código incorreto. Tente novamente.');
-      setOtpCode(''); 
+      setOtpCode('');
       setUiState('2fa_input'); // Volta ao estado de input em caso de erro
       setLoading(false);
     }
@@ -183,12 +201,12 @@ const LoginForm: React.FC = () => {
             </div>
             
             <button 
-                type="button"
-                onClick={() => { setUiState('2fa_input'); setOtpCode(''); }}
-                className="text-xs text-gray-400 hover:text-gray-600 underline"
-                disabled={loading}
+              type="button"
+              onClick={() => { setUiState('2fa_input'); setOtpCode(''); }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+              disabled={loading}
             >
-                Cancelar
+              Cancelar
             </button>
           </div>
         </div>
@@ -200,11 +218,11 @@ const LoginForm: React.FC = () => {
             {uiState === 'credentials' ? 'GesLogic Login' : 'Autenticação Segura'}
           </CardTitle>
           {(uiState === '2fa_input' || uiState === '2fa_decision') && (
-             <CardDescription>
-               {twoFactorMethod === 'EMAIL' 
-                 ? 'Código enviado para o seu email.' 
-                 : 'Insira o código da app autenticadora.'}
-             </CardDescription>
+            <CardDescription>
+              {twoFactorMethod === 'EMAIL' 
+                ? 'Código enviado para o seu email.' 
+                : 'Insira o código da app autenticadora.'}
+            </CardDescription>
           )}
         </CardHeader>
         <CardContent>
@@ -224,37 +242,39 @@ const LoginForm: React.FC = () => {
                   tabIndex={1} 
                 />
               </div>
-<div className="grid w-full max-w-sm items-center gap-1.5 relative">
-  <div className="flex justify-between items-center">
-    <Label htmlFor="password">Password</Label>
-    <Link 
-      to="/forgot-password" 
-      className="text-xs text-blue-600 hover:underline"
-      tabIndex={4}
-    >
-      Esqueceu-se da palavra-passe?
-    </Link>
-  </div>
-  <div className="relative">
-    <Input
-      type={showPassword ? "text" : "password"}
-      id="password"
-      value={password}
-      onChange={(e) => setPassword(e.target.value)}
-      required
-      className="pr-10" // Espaço para o ícone
-      tabIndex={2}
-    />
-    <button
-      type="button"
-      onClick={() => setShowPassword(!showPassword)}
-      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-      tabIndex={5}
-    >
-      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-    </button>
-  </div>
-</div>
+
+              <div className="grid w-full max-w-sm items-center gap-1.5 relative">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="password">Password</Label>
+                  <Link 
+                    to="/forgot-password" 
+                    className="text-xs text-blue-600 hover:underline"
+                    tabIndex={4}
+                  >
+                    Esqueceu-se da palavra-passe?
+                  </Link>
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    id="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="pr-10" // Espaço para o ícone
+                    tabIndex={2}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    tabIndex={5}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
               <Button type="submit" className="w-full" disabled={loading} tabIndex={3}>
                 {loading ? 'A verificar...' : 'Continuar'}
               </Button>

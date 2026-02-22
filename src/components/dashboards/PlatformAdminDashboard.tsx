@@ -1,10 +1,11 @@
-// src/components/dashboards/PlatformAdminDashboard.tsx (VERSÃO FINAL E CORRETA)
+// src/components/dashboards/PlatformAdminDashboard.tsx
+// Migrado para UtilityPageTemplate: header padronizado, accent e grelhas responsivas.
 
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchPlatformStats } from '../../services/api';
 
-// 1. IMPORTAR OS NOSSOS NOVOS WIDGETS
+// Widgets (inalterados)
 import NewCompaniesWidget from './admin-widgets/NewCompaniesWidget';
 import TotalRegistrationsWidget from './admin-widgets/TotalRegistrationsWidget';
 import ActiveEventsWidget from './admin-widgets/ActiveEventsWidget';
@@ -13,37 +14,135 @@ import TotalUserWidget from './admin-widgets/TotalUserWidget';
 import RecentCompaniesWidget from './admin-widgets/RecentCompaniesWidget';
 import RecentEventsWidget from './admin-widgets/RecentEventsWidget';
 
+// Padrão de página utilitária (atenção ao caminho relativo a partir de /components/dashboards)
+import { UtilityPageTemplate, UtilitySection } from '../templates/UtilityPageTemplate';
+
+import { Activity, RefreshCw } from 'lucide-react';
+import { Button } from '../ui/Button';
+
 const PlatformAdminDashboard: React.FC = () => {
-  // 2. A CHAMADA À API CONTINUA A SER ÚNICA E CENTRALIZADA
-  const { data: stats, isLoading, error } = useQuery({
+  // 1) Query Única e Centralizada
+  const { data: stats, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['platformStats'],
     queryFn: fetchPlatformStats,
   });
 
-  if (isLoading) return <div>A carregar dashboard...</div>;
-  if (error) return <div className="text-red-500">Erro: {(error as Error).message}</div>;
-  
+  // 2) Header padronizado + ações à direita (Refresh)
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Dashboard da Plataforma</h1>
+    <UtilityPageTemplate
+      header={{
+        icon: Activity,
+        title: 'Dashboard da Plataforma',
+        subtitle: 'Visão geral, métricas e saúde do sistema.',
+        actions: (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              title="Atualizar métricas"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+              {isFetching ? 'A atualizar...' : 'Atualizar'}
+            </Button>
+          </div>
+        ),
+      }}
+      // Mantém a accent bar e toolbar como nas restantes páginas (ex. DevicesStatusPage)
+      accent={{ content: false, options: true }}
+    >
+      {/* Estados de carregamento/erro alinhados com o padrão visual */}
+      {isLoading && (
+        <UtilitySection withAccent>
+          <div className="p-6 text-center text-gray-600">A carregar dashboard...</div>
+        </UtilitySection>
+      )}
 
-      {/* 3. O LAYOUT AGORA É UMA COMPOSIÇÃO DE WIDGETS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <TotalUserWidget total={stats?.totalUsersCount || 0} count={stats?.newUsersCount || 0} />
-        <NewCompaniesWidget count={stats?.newCompaniesCount || 0} total={stats?.totalCompaniesCount || 0} />
-        <TotalRegistrationsWidget count={stats?.totalRegistrationsCount || 0} />
-        <ActiveEventsWidget count={stats?.activeEventsCount || 0} />
-      </div>
+      {error && !isLoading && (
+        <UtilitySection withAccent>
+          <div className="p-6 text-center text-red-500">
+            Erro ao obter métricas: {(error as Error).message}
+          </div>
+        </UtilitySection>
+      )}
 
-      {/* A TUA NOVA LINHA DE WIDGETS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RecentCompaniesWidget companies={stats?.recentCompanies || []} />
-        <RecentEventsWidget events={stats?.recentEvents || []} />
-      </div>
+      {!isLoading && !error && (
+        <div className="space-y-6">
+          {/* Linha 1 — KPIs principais (4 colunas em desktop) */}
+          <UtilitySection /* withAccent=true por defeito */>
+            <div className="px-1">
+              <div className="px-6 pt-6 pb-4">
+                <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                  Indicadores
+                </h2>
+              </div>
+              <div className="px-6 pb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <TotalUserWidget
+                    total={stats?.totalUsersCount || 0}
+                    count={stats?.newUsersCount || 0}
+                  />
+                  <NewCompaniesWidget
+                    count={stats?.newCompaniesCount || 0}
+                    total={stats?.totalCompaniesCount || 0}
+                  />
+                  <TotalRegistrationsWidget
+                    count={stats?.totalRegistrationsCount || 0}
+                  />
+                  <ActiveEventsWidget
+                    count={stats?.activeEventsCount || 0}
+                  />
+                </div>
+              </div>
+            </div>
+          </UtilitySection>
 
-      {/* O teu widget de logs de erro (está perfeito) */}
-      <RecentErrorsWidget logs={stats?.recentErrorLogs || []} />
-    </div>
+          {/* Linha 2 — Listas recentes (duas colunas) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <UtilitySection>
+              <div className="px-1">
+                <div className="px-6 pt-6 pb-4">
+                  <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                    Empresas Recentes
+                  </h2>
+                </div>
+                <div className="px-6 pb-6">
+                  <RecentCompaniesWidget companies={stats?.recentCompanies || []} />
+                </div>
+              </div>
+            </UtilitySection>
+
+            <UtilitySection>
+              <div className="px-1">
+                <div className="px-6 pt-6 pb-4">
+                  <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                    Eventos Recentes
+                  </h2>
+                </div>
+                <div className="px-6 pb-6">
+                  <RecentEventsWidget events={stats?.recentEvents || []} />
+                </div>
+              </div>
+            </UtilitySection>
+          </div>
+
+          {/* Linha 3 — Logs de erro recentes (full width) */}
+          <UtilitySection>
+            <div className="px-1">
+              <div className="px-6 pt-6 pb-4">
+                <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                  Logs de Erro Recentes
+                </h2>
+              </div>
+              <div className="px-6 pb-6">
+                <RecentErrorsWidget logs={stats?.recentErrorLogs || []} />
+              </div>
+            </div>
+          </UtilitySection>
+        </div>
+      )}
+    </UtilityPageTemplate>
   );
 };
 

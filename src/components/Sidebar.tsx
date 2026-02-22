@@ -1,793 +1,209 @@
-// frontend/src/components/Sidebar.tsx
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom'; // 1. Importar Link e useLocation
+// src/components/Sidebar.tsx
+
+import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/user';
-import { HeartPulse, Activity, List, Users, Settings, Ticket, ClipboardList, BriefcaseBusiness, SquarePlus, UserPlus, Contact, OctagonMinus, ListOrdered, Blocks, Computer, Tablet, Tv, MonitorCheck, ChartBarStacked, Star, CreditCard, UserCog, Mails, ShieldUser, Send, FileSliders, Database  } from 'lucide-react';
+
+// Ícones (não alterados)
+import {
+  HeartPulse, Activity, List, Users, Settings, Ticket, ClipboardList, BriefcaseBusiness,
+  SquarePlus, Contact, OctagonMinus, Blocks, Computer, Tablet, Tv,
+  MonitorCheck, ChartBarStacked, Star, CreditCard, UserCog, Mails, ShieldUser, Send,
+  FileSliders, Database, DatabaseBackup, Files, ChevronLeft, ChevronRight
+} from 'lucide-react';
 import { CalendarDays, CalendarRange } from 'lucide-react';
+
+import SidebarLink from './sidebar/SidebarLink';
+import SidebarGroup from './sidebar/SidebarGroup';
+
+// NOVO — menu declarativo + can()
+import { menuSchema } from './sidebar/menuSchema';
+import { can } from '../lib/authz';
 
 interface SidebarProps {
   isSidebarOpen: boolean;
   toggleSidebar: () => void;
+  collapsed: boolean;
+  onCollapsedChange: (next: boolean) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, toggleSidebar }) => {
-  const { user } = useAuth(); // <-- ADICIONA ESTA LINHA
+const Sidebar: React.FC<SidebarProps> = ({
+  isSidebarOpen,
+  toggleSidebar,
+  collapsed,
+  onCollapsedChange,
+}) => {
+  const { user } = useAuth();
   const location = useLocation();
-  const currentPath = location.pathname; // 4. Obter o caminho atual
-  const [showCompanySubmenu, setShowCompanySubmenu] = useState(false);
-  const [showEventSubmenu, setShowEventSubmenu] = useState(false); // Estado para o submenu de Eventos
-  const [showTicketSubmenu, setShowTicketSubmenu] = useState(false); // Estado para o submenu de Bilhetes
-  const [showSchedulingSubmenu, setShowSchedulingSubmenu] = useState(false); // Estado para o submenu de Agendamento
-  const [showPlatformManagementSubmenu, setShowPlatformManagementSubmenu] = useState(false); // Estado para o submenu de Gestão da Plataforma
+  const currentPath = location.pathname;
 
-  // Guarda o ID do menu aberto ('platform', 'events', 'tickets', 'scheduling') ou null se tudo fechado.
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
 
-  // Função auxiliar para alternar (Se já está aberto, fecha. Se outro está aberto, troca.)
-  const toggleSubmenu = (menuName: string) => {
-    setOpenSubmenu(prev => prev === menuName ? null : menuName);
+  const toggleSubmenu = (id: string) => {
+    setOpenSubmenu(prev => (prev === id ? null : id));
   };
 
-  if (!user) {
-    return null; // Não mostra nada se não houver utilizador
-  }
+  // Impede cliques dentro da sidebar de fechar no mobile
+  const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
+
+  // Breakpoint desktop/mobile
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.matchMedia('(min-width: 768px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(min-width: 768px)');
+    const handler = () => setIsDesktop(mql.matches);
+
+    try {
+      mql.addEventListener('change', handler);
+    } catch {
+      mql.addListener(handler);
+    }
+
+    handler();
+
+    return () => {
+      try {
+        mql.removeEventListener('change', handler);
+      } catch {
+        mql.removeListener(handler);
+      }
+    };
+  }, []);
+
+  if (!user) return null;
+  const u = user;
+
+  // Mobile: labels sempre visíveis
+  const effectiveCollapsed = isDesktop ? collapsed : false;
+  const forceShowLabel = !isDesktop;
+
+  const widthClass = effectiveCollapsed ? 'w-64 md:w-16' : 'w-64 md:w-64';
+
+  const handleNavigateMobile = () => {
+    if (!isDesktop && isSidebarOpen) toggleSidebar();
+  };
 
   return (
     <nav
       className={`
-        bg-gray-800 text-white flex flex-col h-[calc(100vh-4rem)] 
-        overflow-y-auto shadow-lg transition-transform duration-300 ease-in-out
-        
-        /* Para mobile, continua a ser 'fixed' e a deslizar */
-        fixed z-30 top-16 left-0
-        md:relative md:top-0 md:h-full /* <-- A MUDANÇA PARA DESKTOP */
+        bg-gray-900 text-gray-200 flex flex-col h-[calc(100vh-4rem)]
+        overflow-y-auto overflow-x-hidden overscroll-contain shadow-xl border-r border-gray-800
+        transition-transform duration-300 ease-in-out
 
-        w-64 p-4
-        
+        fixed z-50 top-16 left-0
+        md:relative md:top-0 md:h-full md:z-auto
+
+        ${widthClass} p-3 md:p-4
+
         md:translate-x-0
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}
+      aria-label="Navegação lateral"
+      onClick={stopBubble}
+      onTouchStart={stopBubble}
     >
-      {/* Container para o botão de alternância */}
-      {/* CORREÇÃO: Alinhar à esquerda quando aberta, centrar quando fechada */}
-      <div className={`flex justify-end md:hidden`}>
+
+      {/* TOP BAR: Collapse (desktop) + Fechar (mobile) */}
+      <div className="flex items-center justify-between gap-2">
+
+        {/* Collapse desktop */}
+        <button
+          onClick={() => onCollapsedChange(!collapsed)}
+          className="hidden md:inline-flex items-center justify-center w-9 h-9 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+          aria-label={collapsed ? 'Expandir sidebar' : 'Compactar sidebar'}
+        >
+          {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+        </button>
+
+        {/* Fechar menu mobile */}
         <button
           onClick={toggleSidebar}
-          className={`p-2 text-gray-400 hover:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500`}
+          className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 transition-colors ml-auto"
           aria-label={isSidebarOpen ? "Fechar Menu" : "Abrir Menu"}
         >
           {isSidebarOpen ? (
-            // Ícone de fechar (X) ou seta para a esquerda
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           ) : (
-            // Ícone de menu (hambúrguer)
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           )}
         </button>
+
       </div>
 
-      {/* Conteúdo do menu, visível apenas quando a sidebar está aberta */}
+      {/* MENU (agora totalmente declarativo) */}
+      <ul className="space-y-1 mt-2 min-w-0">
 
-        <ul className="space-y-2"> {/* Removido mt-12, pois o container do botão já providencia o espaçamento */}
-          <li>
-            <Link
-              to="/dashboard"
-              className={`block w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                currentPath === '/dashboard' ? 'bg-gray-700 font-bold' : ''
-              }`}
+        {menuSchema.map(group => {
+          // Filtrar itens do grupo usando can()
+          const visibleItems = group.items.filter(item =>
+            !item.features || item.features.every(f => can(u, f as any))
+          );
+          if (visibleItems.length === 0) return null;
+
+          // 🔹 Se for 'direct' e só tiver 1 item visível → renderiza atalho direto (sem SidebarGroup)
+          const isDirect = group.direct && visibleItems.length === 1;
+
+          if (isDirect) {
+            const item = visibleItems[0];
+            return (
+              <li key={`direct-${group.id}`} className="min-w-0">
+                <SidebarLink
+                  to={item.to}
+                  active={currentPath === item.to}
+                  collapsed={effectiveCollapsed}
+                  forceShowLabel={forceShowLabel}
+                  onNavigate={handleNavigateMobile}
+                  icon={item.icon ?? group.icon}
+                >
+                  {item.label}
+                </SidebarLink>
+              </li>
+            );
+          }
+
+          // 🔹 Caso normal → renderiza grupo com submenu
+          return (
+            <SidebarGroup
+              key={group.id}
+              id={group.id}
+              title={group.title}
+              icon={group.icon}
+              isOpen={openSubmenu === group.id}
+              onToggle={toggleSubmenu}
+              active={currentPath.startsWith(`/${group.id}`)}
+              collapsed={effectiveCollapsed}
+              forceShowLabel={forceShowLabel}
+              hasChildren={visibleItems.length > 1}
+              onNavigateChild={handleNavigateMobile}
             >
-              Dashboard
-            </Link>
-          </li>
-
-{/* MENU CONSOLIDADO: Gestão da Plataforma (Apenas Platform Admin) */}
-{user?.role === UserRole.PLATFORM_ADMIN && (
-  <li>
-    <button
-      onClick={() => toggleSubmenu('platform')}
-      className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-        openSubmenu === 'platform' || currentPath.startsWith('/platform-admins') ? 'bg-gray-700 font-bold' : ''
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <Settings className="w-5 h-5" />
-        <span>Gestão da Plataforma</span>
-      </div>
-      <svg
-        className={`w-4 h-4 transform transition-transform duration-200 ${
-          openSubmenu === 'platform' ? 'rotate-90' : ''
-        }`}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-      </svg>
-    </button>
-    
-    {openSubmenu === 'platform' && (
-      <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
-        {/* 1. Administradores da Plataforma */}
-        <li>
-          <Link to="/platform-admins" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/platform-admins' ? 'text-white font-bold' : 'text-gray-300'}`}>
-            <ShieldUser className="w-4 h-4" /> Administradores
-          </Link>
-        </li>
-        
-        {/* 2. Empresas (Portal de Entrada para tudo o que é empresa) */}
-        <li>
-          <Link to="/companies/list" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/companies/list' ? 'text-white font-bold' : 'text-gray-300'}`}>
-            <BriefcaseBusiness className="w-4 h-4" /> Empresas
-          </Link>
-        </li>
-
-        {/* 3. Logs de Emails */}
-        <li>
-          <Link to="/sent-emails-log" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/sent-emails-log' ? 'text-white font-bold' : 'text-gray-300'}`}>
-            <Send className="w-4 h-4" /> Logs de Emails
-          </Link>
-        </li>
-
-        {/* 4. Logs do Sistema */}
-        <li>
-          <Link to="/logs" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/logs' ? 'text-white font-bold' : 'text-gray-300'}`}>
-            <FileSliders className="w-4 h-4" /> Logs do Sistema
-          </Link>
-        </li>
-
-        {/* 5. Saúde do Sistema */}
-        <li>
-          <Link to="/system-health" className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/system-health' ? 'text-white font-bold' : 'text-gray-300'}`}>
-            <HeartPulse className="w-4 h-4" /> Saúde do Sistema
-          </Link>
-        </li>
-
-        {/* 3. Backups do Sistema */}
-        <li>
-          <Link 
-            to="/backups" 
-            className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-              currentPath === '/backups' ? 'text-white font-bold' : 'text-gray-300'
-            }`}
-          >
-            <Database className="w-4 h-4" />Backups
-          </Link>
-        </li>
+              {visibleItems.map(item => (
+                <li key={item.to} className="min-w-0">
+                  <SidebarLink
+                    to={item.to}
+                    active={currentPath === item.to}
+                    collapsed={effectiveCollapsed}
+                    forceShowLabel={forceShowLabel}
+                    onNavigate={handleNavigateMobile}
+                    icon={item.icon}
+                  >
+                    {item.label}
+                  </SidebarLink>
+                </li>
+              ))}
+            </SidebarGroup>
+          );
+        })}
 
       </ul>
-    )}
-  </li>
-)}
-
-          {/* Menu para Platform Admin */}
-{/*           {user?.role === UserRole.PLATFORM_ADMIN && (
-            <>
-              <li>
-                <button
-                  onClick={() => setShowCompanySubmenu(!showCompanySubmenu)}
-                  className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                    showCompanySubmenu || currentPath.startsWith('/company') ? 'bg-gray-700 font-bold' : ''
-                  }`}
-                >
-                <div className="flex items-center gap-2">
-                    <BriefcaseBusiness className="w-5 h-5" />
-                    <span>Gestão de Empresas</span>
-                </div>                   
-                  <svg
-                    className={`w-4 h-4 transform transition-transform duration-200 ${
-                      showCompanySubmenu ? 'rotate-90' : ''
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-                  </svg>
-                </button>
-                {showCompanySubmenu && (
-                  <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
-                    <li>
-                      <Link
-                        to="/companies/create"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/companies/create' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <SquarePlus className="w-4 h-4" />
-                        Criar Empresa
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to="/companies/list"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/companies/list' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <List className="w-4 h-4" />
-                        Listar Empresas
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to="/company-admins/create"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/company-admins/create' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <UserPlus className="w-4 h-4" />
-                        Criar Admin
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to="/company-admins/list"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath.startsWith('/company-admins/list') ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <Users className="w-4 h-4" />
-                        Listar Admins
-                      </Link>
-                    </li>
-                  </ul>
-                )}
-              </li>
-            </>
-          )} */}
-
-          {/* Menu para Company Admin */}
-          {user?.role === UserRole.COMPANY_ADMIN && (
-            <li>
-              <Link
-                to="/company-details"
-                className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  currentPath === '/company-details' ? 'bg-gray-700 text-white font-bold' : ''
-                }`}
-              >
-                <BriefcaseBusiness className="w-4 h-4" />
-                Dados da Empresa
-              </Link>
-            </li>            
-          )}
-          {user?.role === UserRole.COMPANY_ADMIN && (
-            <li>
-              <Link
-                to="/company-payments"
-                className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  currentPath === '/company-payments' ? 'bg-gray-700 text-white font-bold' : ''
-                }`}
-              >
-                <CreditCard className="w-4 h-4" />
-                Dados da Financeiros
-              </Link>
-            </li>            
-          )}          
-          {user?.role === UserRole.COMPANY_ADMIN && (
-            <li>
-              <Link
-                to={`/companies/homepage/edit/${user.company?.id}`}
-                className={`block w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 ${
-                  location.pathname.startsWith('/companies/homepage/edit') ? 'bg-gray-700 text-white font-bold' : ''
-                }`}
-              >
-                Personalizar Página
-              </Link>
-            </li>
-          )}
-          {/* Adicionar item "Listar Company Admins" para Company Admins */}
-          {(user?.role === UserRole.COMPANY_ADMIN) && (
-            <li>
-              <Link
-                to="/company-admins/list"
-                className={`block w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  currentPath === '/company-admins/list' ? 'bg-gray-700 font-bold' : ''
-                }`}
-              >
-                Listar Company Admins
-              </Link>
-            </li>
-          )}
-
-
-
-
-
-
-          {/* NOVO: Menu para Eventos (para Platform Admin e Company Admin) */}
-          {user && (
-            // 1. Platform Admin tem acesso total
-            user.role === UserRole.PLATFORM_ADMIN || 
-            
-            // 2. Utilizadores de Empresa (Só se tiverem subscrição ativa)
-            (
-                user.company?.subscribedServices?.includes('EVENTS') && 
-                (
-                    // Pode ser o Dono da Empresa
-                    user.role === UserRole.COMPANY_ADMIN ||
-                    // Ou o Staff com permissão de Gestão
-                    (user.role === UserRole.EVENT_STAFF && user.eventStaffDetails?.staffRole === 'MANAGEMENT')
-                )
-            )
-          ) && (
-            <li>
-              <button
-                onClick={() => toggleSubmenu('events')}
-                className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  openSubmenu === 'events' || currentPath.startsWith('/event') ? 'bg-gray-700 font-bold' : ''
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                    <ClipboardList className="w-5 h-5" />
-                    <span>Gestão de Eventos</span>
-                </div>                  
-                <svg
-                  className={`w-4 h-4 transform transition-transform duration-200 ${
-                    openSubmenu === 'events' ? 'rotate-90' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-              </button>
-              {openSubmenu === 'events' && (
-                <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
-                  {/* Apenas Company Admins e Platform Admins podem criar eventos */}
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/event-staff"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/event-staff' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                          }`}
-                      >
-                        <Users className="w-4 h-4" />
-                        Operadores / Staff
-                      </Link>
-                    </li>
-                  )}                  
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/events/create"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/events/create' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <SquarePlus className="w-4 h-4" />
-                        Criar Evento
-                      </Link>
-                    </li>
-                  )}
-                  <li>
-                    <Link 
-                      to="/events/list"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/events/list' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <List className="w-4 h-4" />
-                      Listar Eventos
-                    </Link>
-                  </li>
-                  <li>
-                    <Link 
-                      to="/events/feedback"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/events/feedback' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <Star className="w-4 h-4" />
-                      Auditoria de Satisfação
-                    </Link>
-                  </li>                  
-                </ul>
-              )}
-            </li>
-          )}
-
-
-
-          {/* NOVO: Menu para FILAS (para Platform Admin e Company Admin) */}
-          {user && (user.role === UserRole.PLATFORM_ADMIN || (user.role === UserRole.COMPANY_ADMIN && user.company?.subscribedServices?.includes('QUEUES'))) && (
-            <li>
-              <button
-                onClick={() => toggleSubmenu('tickets')}
-                className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  openSubmenu === 'tickets' || currentPath.startsWith('/ticket') ? 'bg-gray-700 font-bold' : ''
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                    <Ticket className="w-5 h-5" />
-                    <span>Gestão de senhas</span>
-                </div>                
-                <svg
-                  className={`w-4 h-4 transform transition-transform duration-200 ${
-                    openSubmenu === 'tickets' ? 'rotate-90' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-              </button>
-              {openSubmenu === 'tickets' && (
-                <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
-                  {/* Apenas Company Admins e Platform Admins podem criar eventos */}
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/operators"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/operators' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                          }`}
-                      >
-                        <Users className="w-4 h-4" />
-                        Operadores
-                      </Link>
-                    </li>
-                  )}
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/user-types"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/user-types' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                          }`}
-                      >
-                        <Contact className="w-4 h-4" />
-                        Tipos de Utente
-                      </Link>
-                    </li>
-                  )}                  
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/schedules"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/schedules' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                          }`}
-                      >
-                        <OctagonMinus className="w-4 h-4" />
-                        Regras de Prioridade
-                      </Link>
-                    </li>
-                  )}
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/services"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/services' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <Blocks className="w-4 h-4" />
-                        Serviços de Atendimento
-                      </Link>
-                    </li>
-                  )}
-{/*                   {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link
-                        to="/user-groups"
-                        className={`block w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/user-groups' ? 'bg-gray-700 font-bold' : ''
-                          }`}
-                      >
-                        Grupos de Utentes
-                      </Link>
-                    </li>
-                  )}   */}                 
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link 
-                        to="/counters"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/counters' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <Computer className="w-4 h-4" />
-                        Balcões de Atendimento
-                      </Link>
-                    </li>
-                  )}
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link 
-                        to="/kiosks"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/kiosks' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <Tablet className="w-4 h-4" />
-                        Quiosques
-                      </Link>
-                    </li>
-                  )}
-                  {(user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-                    <li>
-                      <Link 
-                        to="/displays"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                          currentPath === '/displays' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                        }`}
-                      >
-                        <Tv className="w-4 h-4" />
-                        Displays
-                      </Link>
-                    </li>
-                  )}
-                  
-                  <li>
-                    <Link 
-                      to="/operator/setup"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/operator/setup' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <UserCog className="w-4 h-4" />
-                      Configuração de Operador
-                    </Link>
-                  </li>
-                  <li>
-                    <Link 
-                      to="operator-sessions"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === 'operator-sessions' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <MonitorCheck className="w-4 h-4" />
-                      Sessões Ativas de Atendimento
-                    </Link>
-                  </li>
-                  
-                  <li>
-                    <Link 
-                      to="devices-monitor"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === 'devices-monitor' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <Activity className="w-4 h-4" />
-                      Monitorização de dispositivos
-                    </Link>
-                  </li>
-
-                  <li>
-                    <Link to="/dashboard/queues"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/dashboard/queues' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <ChartBarStacked className="w-4 h-4" />
-                      Estatísticas
-                    </Link>
-                  </li>                                     
-
-                  <li>
-                    <Link to="/feedback-auditory"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/feedback-auditory' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <Star className="w-4 h-4" />
-                      Auditoria de Satisfação
-                    </Link>
-                  </li> 
-
-                </ul>
-              )}
-            </li>
-          )}
-
-{/* NOVO: Menu para AGENDAMENTOS */}
-          {user && (user.role === UserRole.PLATFORM_ADMIN || (user.role === UserRole.COMPANY_ADMIN && user.company?.subscribedServices?.includes('SCHEDULING'))) && (
-            <li>
-              <button
-                onClick={() => toggleSubmenu('scheduling')} 
-                className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  openSubmenu === 'scheduling' || currentPath.startsWith('/scheduling') ? 'bg-gray-700 font-bold' : ''
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5" />
-                    <span>Agendamentos</span>
-                </div>
-                <svg
-                  className={`w-4 h-4 transform transition-transform duration-200 ${
-                    openSubmenu === 'scheduling' ? 'rotate-90' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-              </button>
-              
-              {openSubmenu === 'scheduling' && (
-                <ul className="ml-4 mt-2 space-y-1 border-l-2 border-gray-600 pl-2">
-                  
-                  {/* 1. VISÃO PRINCIPAL: CALENDÁRIO */}
-                  <li>
-                    <Link
-                      to="/scheduling/calendar"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/scheduling/calendar' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <CalendarRange className="w-4 h-4" />
-                      Calendário Visual
-                    </Link>
-                  </li>
-
-                  {/* 2. LISTA DIÁRIA */}
-                  <li>
-                    <Link
-                      to="/scheduling/appointments"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/scheduling/appointments' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <List className="w-4 h-4" />
-                      Lista Diária
-                    </Link>
-                  </li>
-
-                  {/* 3. CONFIGURAÇÕES (RECURSOS) */}
-                  <li>
-                    <Link
-                      to="/scheduling/resources"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/scheduling/resources' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <Users className="w-4 h-4" />
-                      Recursos
-                    </Link>
-                  </li>
-
-                  {/* 4. CONFIGURAÇÕES (PERFIS) */}
-                  <li>
-                    <Link
-                      to="/scheduling/profiles"
-                      className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                        currentPath === '/scheduling/profiles' ? 'bg-gray-700 text-white font-bold' : 'text-gray-300'
-                      }`}
-                    >
-                      <Settings className="w-4 h-4" />
-                      Perfis de Serviço
-                    </Link>
-                  </li>
-                  
-                  {/* 5. TESTE (Só para Platform Admin) */}
-                  {user.role === UserRole.PLATFORM_ADMIN && (
-                    <li>
-                        <Link
-                        to="/scheduling/book-test"
-                        className={`flex items-center gap-2 w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                            currentPath === '/scheduling/book-test' ? 'bg-gray-700 text-white font-bold' : 'text-gray-400 italic'
-                        }`}
-                        >
-                        Link Público (Teste)
-                        </Link>
-                    </li>
-                  )}
-
-                </ul>
-              )}
-            </li>
-          )}
-
-          {user && (user.role === UserRole.PLATFORM_ADMIN || user.role === UserRole.COMPANY_ADMIN) && (
-            <>
-            <li>
-              <Link 
-                to="/email-templates" 
-                className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 
-                ${currentPath === '/email-templates' ? 'bg-gray-700 font-bold' : ''
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                    <Mails className="w-5 h-5" />
-                    <span>Templates de Email</span>
-                </div>                
-              </Link>
-            </li>
-            <li>
-              <Link 
-                to="/policy-documents" 
-                className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 
-                ${currentPath === '/policy-documents' ? 'bg-gray-700 font-bold' : ''
-
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                    <ShieldUser className="w-5 h-5" />
-                    <span>Política de Privacidade</span>
-                </div>                     
-              </Link>
-            </li>
-          </>
-          )}
-{/*           {user?.role === UserRole.PLATFORM_ADMIN && (
-            <>
-              <li>
-                <Link to="/sent-emails-log" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/sent-emails-log' ? 'bg-gray-700 font-bold' : ''}`}>
-                <div className="flex items-center gap-2">
-                    <Send className="w-5 h-5" />
-                    <span>Logs de Mails Enviados</span>
-                </div>
-                </Link>
-              </li>
-              <li>
-                <Link to="/logs" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/logs' ? 'bg-gray-700 font-bold' : ''}`}>
-                <div className="flex items-center gap-2">
-                    <FileSliders className="w-5 h-5" />
-                    <span>Logs do Sistema</span>
-                </div>
-                </Link>
-              </li>
-              <li>
-                <Link to="/system-health" className={`flex items-center justify-between w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${currentPath === '/system-health' ? 'bg-gray-700 font-bold' : ''}`}>
-                <div className="flex items-center gap-2">
-                    <HeartPulse className="w-5 h-5" />
-                    <span>Saúde do Sistema</span>
-                </div>                  
-                </Link>
-              </li>
-            </>
-          )} */}
-
-          {/* Item de menu para Participantes (apenas para o papel de Participante) */}
-          {user?.role === UserRole.PARTICIPANT && (
-            <li>
-              <Link
-                to="/events/list"
-                className={`block w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 transition-colors duration-200 ${
-                  currentPath === '/events/list' ? 'bg-gray-700 font-bold' : ''
-                }`}
-              >
-                Meus Eventos
-              </Link>
-            </li>
-          )}
-          {/* Adicione mais itens de menu aqui, se necessário */}
-
-
-{user && user.role === UserRole.OPERATOR && (
-  <>
-    <li>
-      <Link
-        to="/operator/setup"
-        className={`block w-full text-left py-2 px-3 rounded-md hover:bg-gray-700 ${
-          currentPath.startsWith('/operator') ? 'bg-gray-700 font-bold' : ''
-        }`}
-      >
-        Iniciar Sessão de Atendimento
-      </Link>
-    </li>
-    {/* No futuro, podemos adicionar aqui outros links, como "Ver as Minhas Estatísticas" */}
-  </>
-)}
-
-
-
-        </ul>
-
     </nav>
   );
 };

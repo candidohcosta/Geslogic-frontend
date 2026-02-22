@@ -32,6 +32,28 @@
   }
 }
 
+
+
+@layer utilities {
+  /* Alinha a barra sticky às bordas do Card (padding de 24px) */
+  .card-sticky {
+    @apply sticky left-0 -mx-6 px-6 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20;
+  }
+  .card-sticky-top {
+    @apply card-sticky top-0 -mt-6 pt-2 border-b;
+  }
+  .card-sticky-bottom {
+    @apply card-sticky bottom-0 -mb-6 pb-4 border-t;
+  }
+
+  /* Tabela scroll horizontal padrão */
+  .table-scroll-x {
+    @apply rounded-md border overflow-x-auto;
+  }
+}
+
+
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -54,4 +76,9 @@ code {
 /* Opcional: Adiciona um estilo visual para o editor em modo readonly */
 .quill-readonly .ql-container {
   background-color: #f3f4f6; /* bg-gray-100 */
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
 }

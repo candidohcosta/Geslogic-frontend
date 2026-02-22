@@ -4,8 +4,9 @@ import React from 'react';
 import { useOperatorSession } from '../context/OperatorSessionContext';
 
 // Importamos os componentes das páginas que queremos renderizar
-import OperatorDashboard from './OperatorDashboard';
+import OperatorLiveDashboard from './OperatorLiveDashboard';
 import OperatorSetupPage from './OperatorSetupPage';
+import OperatorStatsDashboard from '../components/dashboards/OperatorStatsDashboard';
 
 const OperatorRouteHandler: React.FC = () => {
   const { sessionId, isLoadingSession } = useOperatorSession();
@@ -17,7 +18,7 @@ const OperatorRouteHandler: React.FC = () => {
 
   // Se já houver uma sessão, renderizamos o Dashboard do Operador
   if (sessionId) {
-    return <OperatorDashboard />;
+    return <OperatorStatsDashboard />;
   } 
   
   // Se não houver sessão, renderizamos a página de Setup

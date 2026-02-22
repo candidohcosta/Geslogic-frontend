@@ -1,30 +1,64 @@
-// frontend/src/pages/ListCompaniesPage.tsx (VERSÃO FINAL E CORRIGIDA)
-
-import React, { useState, useEffect, useRef } from 'react';
+// src/pages/ListCompaniesPage.tsx
+import React, { useState, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { UserRole } from '../types/user';
-import CompanyDetailsPage from './CompanyEditPage';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { fetchCompanies, activateDeactivateCompany, deleteCompany } from '../services/api';
+import {
+  fetchCompanies,
+  activateDeactivateCompany,
+  deleteCompany,
+  createCompany,
+  checkCompanySlugExists,
+  checkCompanyNifExists,
+} from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Card, CardHeader, CardDescription, CardTitle, CardContent } from '../components/ui/Card';
+
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Label } from '../components/ui/Label';
-import { Checkbox } from '../components/ui/Checkbox';
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from "../components/ui/Table";
-import { FilePenLine, Mail, Users, Ban, Trash2, LayoutDashboard, Copy, CreditCard, Plus} from 'lucide-react';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '../components/ui/Select';
+import {
+  FilePenLine, Mail, Users, LayoutDashboard, Copy, CreditCard, Plus, BriefcaseBusiness, MoreVertical
+} from 'lucide-react';
 import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 import { toast } from 'react-hot-toast';
 
+import { ListPageTemplate } from '../components/templates/ListPageTemplate';
+import type { Column } from '../components/templates/types';
 
+import { useContextMenu } from '../components/context-menu/useContextMenu';
+import ContextMenu from '../components/context-menu/ContextMenu';
+import { ContextMenuItem } from '../components/context-menu/ContextMenuItem';
+
+import { Drawer } from '../components/patterns/Drawer';
+import { ConfirmDialog } from '../components/patterns/ConfirmDialog';
+import { cn } from '../lib/utils';
+
+// 🔹 usa o teu hook (já existe no projeto)
+import { useDebounce } from '../hooks/useDebounce';
+
+import { isValidPortugueseNIF } from '../lib/ptNif';
+
+// ---------- Larguras ----------
+const COLS = {
+  name: 28,
+  email: 28,
+  nif: 8,
+  active: 8,
+  actions: 28,
+} as const;
+
+const FILTER_GRID_TEMPLATE = `
+  ${COLS.name}%
+  ${COLS.email}%
+  ${COLS.nif}%
+  ${COLS.active}%
+  ${COLS.actions}%
+`;
+
+// Tipos
 interface CompanyData {
   id: string;
   name: string;
@@ -38,477 +72,724 @@ interface CompanyData {
   phone?: string;
 }
 
+type SortBy = 'name' | 'email' | 'nif' | 'active';
+
+// Helper: slugify
+function slugify(input: string) {
+  return input
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036F]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '')
+    .slice(0, 64);
+}
+
 const ListCompaniesPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
   const [isCopied, copy] = useCopyToClipboard();
 
-  // Estados relacionados apenas com a UI
-  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; company: CompanyData | null; }>({ visible: false, x: 0, y: 0, company: null });
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-  //const [showEditModal, setShowEditModal] = useState(false);
-  //const [selectedCompanyForEdit, setSelectedCompanyForEdit] = useState<CompanyData | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // ===== Context menu =====
+  const { state: cm, openAt, close: closeMenu } = useContextMenu({ estimatedSize: { width: 260, height: 280 } });
+  const [selectedCompany, setSelectedCompany] = useState<CompanyData | null>(null);
+
+  // ===== Drawers & Dialogs =====
+  const [createOpen, setCreateOpen] = useState(false);
+
+  // Delete confirm
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedCompanyForDelete, setSelectedCompanyForDelete] = useState<CompanyData | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  // Deactivate confirm
+  const [deactOpen, setDeactOpen] = useState(false);
   const [selectedCompanyForDeactivate, setSelectedCompanyForDeactivate] = useState<CompanyData | null>(null);
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [deactLoading, setDeactLoading] = useState(false);
 
-  // Hook do TanStack Query para buscar os dados
+  // ===== Filtros (header) =====
+  const [filters, setFilters] = useState<{
+    companyId: 'all' | string;
+    email: string;
+    nif: string;
+    active: 'all' | 'active' | 'inactive';
+  }>({
+    companyId: 'all',
+    email: '',
+    nif: '',
+    active: 'all',
+  });
+
+  // ===== Ordenação =====
+  const [sortBy, setSortBy] = useState<SortBy>('name');
+  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
+
+  // ===== Dados =====
   const { data: companies = [], isLoading, error } = useQuery<CompanyData[], Error>({
     queryKey: ['companies'],
     queryFn: fetchCompanies,
     enabled: user?.role === UserRole.PLATFORM_ADMIN,
   });
 
-  // Hook do TanStack Query para a mutação de ativar/desativar
+  // Options empresas
+  const companyOptions = useMemo(() => {
+    return companies
+      .map(c => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [companies]);
+
+  // ===== Mutations =====
   const activateDeactivateMutation = useMutation({
     mutationFn: activateDeactivateCompany,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['companies'] });
+      setDeactOpen(false);
+      setSelectedCompanyForDeactivate(null);
+      closeMenu();
     },
+    onSettled: () => setDeactLoading(false),
   });
 
-  // Hook do TanStack Query para a mutação de apagar
   const deleteCompanyMutation = useMutation({
     mutationFn: deleteCompany,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['companies'] });
-      handleCloseDeleteModal();
+      setDeleteOpen(false);
+      setSelectedCompanyForDelete(null);
+    },
+    onSettled: () => setDeleteLoading(false),
+  });
+
+  const createCompanyMutation = useMutation({
+    mutationFn: createCompany,
+    onSuccess: (res: any, vars: any) => {
+      // Aceita { company } ou objeto direto
+      const created = res?.company ?? res;
+      const newId: string | undefined = created?.id;
+
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      setCreateOpen(false);
+      setCreateForm({ name: '', email: '', nif: '', slug: '' });
+
+      if (newId) {
+        toast.success('Empresa criada com sucesso. A redirecionar…');
+        navigate(`/companies/edit/${newId}`, {
+          state: { justCreated: true, companyName: vars?.name || created?.name || '' },
+          replace: true,
+        });
+      } else {
+        toast.error('Empresa criada, mas não foi possível obter o ID para redirecionar.');
+      }
+    },
+    onError: (err: any) => {
+      const msg = err?.message || 'Erro ao criar empresa.';
+      toast.error(msg);
     },
   });
 
-  // Handler para o menu de contexto
-  const handleContextMenu = (e: React.MouseEvent, company: CompanyData) => {
+  // ===== Context menu handlers =====
+  const handleRowContextMenu = (e: React.MouseEvent, company: CompanyData) => {
     e.preventDefault();
-    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, company: company });
+    setSelectedCompany(company);
+    openAt(e.pageX, e.pageY);
   };
 
-  // Efeito para fechar o menu de contexto
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
-        setContextMenu({ ...contextMenu, visible: false });
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [contextMenu]);
-
-  // Handlers que chamam as mutações
-/*   const handleConfirmDeactivate = () => {
-    if (!contextMenu.company) return;
-    activateDeactivateMutation.mutate({
-      companyId: contextMenu.company.id,
-      isActive: !contextMenu.company.isActive,
-    });
-    setContextMenu({ ...contextMenu, visible: false });
-  }; */
-
-  const handleConfirmDeleteCompany = () => {
-    if (!selectedCompanyForDelete || !confirmDelete) return;
-    deleteCompanyMutation.mutate(selectedCompanyForDelete.id);
+  const openMenuNearElement = (el: HTMLElement, company: CompanyData) => {
+    const r = el.getBoundingClientRect();
+    setSelectedCompany(company);
+    openAt(r.right + window.scrollX, r.top + window.scrollY);
   };
 
-  // Handlers para os modais e UI
-/*   const handleEditCompany = () => {
-    if (contextMenu.company) {
-      setSelectedCompanyForEdit(contextMenu.company);
-      setShowEditModal(true);
-      setContextMenu({ ...contextMenu, visible: false });
+  const handleActivateDeactivate = () => {
+    if (!selectedCompany) return;
+    if (selectedCompany.isActive) {
+      setSelectedCompanyForDeactivate(selectedCompany);
+      setDeactOpen(true);
+    } else {
+      setDeactLoading(true);
+      activateDeactivateMutation.mutate({ companyId: selectedCompany.id, isActive: true });
     }
-  }; */
+    closeMenu();
+  };
 
-/*   const handleCloseEditModal = () => {
-    setShowEditModal(false);
-    setSelectedCompanyForEdit(null);
-  }; */
+  const handleDeactivateClick = () => {
+    if (!selectedCompany) return;
+    setSelectedCompanyForDeactivate(selectedCompany);
+    setDeactOpen(true);
+    closeMenu();
+  };
 
   const handleDeleteCompanyClick = () => {
-    if (contextMenu.company) {
-      setSelectedCompanyForDelete(contextMenu.company);
-      setShowDeleteModal(true);
-      setConfirmDelete(false);
-      setContextMenu({ ...contextMenu, visible: false });
-    }
+    if (!selectedCompany) return;
+    setSelectedCompanyForDelete(selectedCompany);
+    setDeleteOpen(true);
+    closeMenu();
   };
 
-  const handleCloseDeleteModal = () => {
-    setShowDeleteModal(false);
-    setSelectedCompanyForDelete(null);
-    setConfirmDelete(false);
+  // ===== Filtros handlers =====
+  const handleSelectChange = (name: 'companyId' | 'active', value: string) => {
+    setFilters(prev => ({ ...prev, [name]: value as any }));
+  };
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  // Esta função agora serve para ATIVAR diretamente ou para iniciar o processo de DESATIVAÇÃO.
-  const handleActivateDeactivate = () => {
-    if (!contextMenu.company) return;
-
-    if (contextMenu.company.isActive) {
-      // Se a empresa está ATIVA, queremos DESATIVÁ-LA.
-      // Então, abrimos o modal de confirmação.
-      setSelectedCompanyForDeactivate(contextMenu.company);
-      setShowDeactivateModal(true);
-      setConfirmDeactivate(false);
+  // ===== Ordenação handlers =====
+  const handleSort = (column: SortBy) => {
+    if (sortBy === column) {
+      setSortOrder(prev => (prev === 'ASC' ? 'DESC' : 'ASC'));
     } else {
-      // Se a empresa está INATIVA, queremos ATIVÁ-LA.
-      // Fazemos isto diretamente, sem modal.
-      activateDeactivateMutation.mutate({
-        companyId: contextMenu.company.id,
-        isActive: true, // Ativar
-      });
-    }
-
-    // Fecha o menu de contexto em ambos os casos
-    setContextMenu({ ...contextMenu, visible: false });
-  };
-
-  // Abre o modal de desativação
-  const handleDeactivateClick = () => {
-    if (contextMenu.company) {
-      setSelectedCompanyForDeactivate(contextMenu.company);
-      setShowDeactivateModal(true);
-      setConfirmDeactivate(false); // Resetar a checkbox
-      setContextMenu({ ...contextMenu, visible: false });
+      setSortBy(column);
+      setSortOrder('ASC');
     }
   };
+  const sortIndicator = (column: SortBy) =>
+    sortBy === column ? (sortOrder === 'ASC' ? '▲' : '▼') : '';
 
-  // Fecha o modal de desativação
-  const handleCloseDeactivateModal = () => {
-    setShowDeactivateModal(false);
-    setSelectedCompanyForDeactivate(null);
-    setConfirmDeactivate(false);
-  };
+  // ===== Derived =====
+  const filteredCompanies = useMemo(() => {
+    const base = companies
+      .filter(c => (filters.companyId === 'all' ? true : c.id === filters.companyId))
+      .filter(c => (filters.email ? c.email.toLowerCase().includes(filters.email.toLowerCase()) : true))
+      .filter(c => (filters.nif ? c.nif.toLowerCase().includes(filters.nif.toLowerCase()) : true))
+      .filter(c =>
+        filters.active === 'all' ? true : filters.active === 'active' ? c.isActive : !c.isActive
+      );
 
-  // Confirma a ação e chama a mutação (a antiga handleConfirmDeactivate)
-  const handleConfirmDeactivate = () => {
-    if (!selectedCompanyForDeactivate || !confirmDeactivate) return;
-    
-    activateDeactivateMutation.mutate({
-      companyId: selectedCompanyForDeactivate.id,
-      isActive: !selectedCompanyForDeactivate.isActive, // A lógica de inverter o estado
+    const arr = [...base];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case 'name': cmp = a.name.localeCompare(b.name); break;
+        case 'email': cmp = a.email.localeCompare(b.email); break;
+        case 'nif': cmp = a.nif.localeCompare(b.nif); break;
+        case 'active': cmp = a.isActive === b.isActive ? 0 : a.isActive ? 1 : -1; break;
+        default: cmp = 0;
+      }
+      return sortOrder === 'ASC' ? cmp : -cmp;
     });
-    
-    handleCloseDeactivateModal(); // Fecha o modal após a chamada
+
+    return arr;
+  }, [companies, filters, sortBy, sortOrder]);
+
+  // ===== Colunas =====
+  const columns: Column<CompanyData>[] = [
+    { key: 'name',   header: 'Nome',   widthPct: COLS.name,   sortable: true },
+    { key: 'email',  header: 'Email',  widthPct: COLS.email,  sortable: true },
+    { key: 'nif',    header: 'NIF',    widthPct: COLS.nif,    sortable: true, className: 'font-mono text-xs' },
+    {
+      key: 'active', header: 'Ativa',  widthPct: COLS.active, sortable: true,
+      render: (c) => (
+        <span
+          className={cn(
+            'px-2 py-1 rounded-full text-[10px] font-bold uppercase',
+            c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700',
+          )}
+        >
+          {c.isActive ? 'Ativa' : 'Inativa'}
+        </span>
+      )
+    },
+    {
+      key: 'actions', header: <span className="sr-only">Ações</span>, widthPct: COLS.actions, align: 'right',
+      render: (c) => (
+        <div className="flex items-center justify-end space-x-1">
+          <span className="hidden md:inline-flex items-center gap-1">
+            <Button variant="ghost" size="icon" asChild title="Editar Empresa">
+              <Link to={`/companies/edit/${c.id}`}><FilePenLine className="h-4 w-4" /></Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild title="Configurar Pagamentos">
+              <Link to={`/companies/payment-config/${c.id}`}><CreditCard className="h-4 w-4" /></Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild title="Editar Homepage">
+              <Link to={`/companies/homepage/edit/${c.id}`}><LayoutDashboard className="h-4 w-4" /></Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                const url = `${window.location.protocol}//${c.slug}.${process.env.REACT_APP_MAIN_DOMAIN}${window.location.port ? ':' + window.location.port : ''}`;
+                copy(url);
+                toast.success('Link copiado!');
+              }}
+              title="Copiar Link Público"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" asChild title="Administradores">
+              <Link to={`/company-admins/list/${c.id}`}><Users className="h-4 w-4" /></Link>
+            </Button>
+            {user?.role === UserRole.PLATFORM_ADMIN && (
+              <Button variant="ghost" size="icon" asChild title="Configurar SMTP">
+                <Link to={`/companies/smtp-config/${c.id}`}><Mail className="h-4 w-4" /></Link>
+              </Button>
+            )}
+          </span>
+
+          {/* Mobile: botão ⋮ abre o mesmo context menu */}
+          <button
+            className="md:hidden inline-flex p-2 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            aria-label="Mais ações"
+            onClick={(e) => openMenuNearElement(e.currentTarget as HTMLElement, c)}
+          >
+            <MoreVertical className="w-5 h-5" />
+          </button>
+        </div>
+      )
+    },
+  ];
+
+  const total = companies.length;
+  const visiveis = filteredCompanies.length;
+
+  // ===== Estado do Form "Nova Empresa" =====
+  const [createForm, setCreateForm] = useState({ name: '', email: '', nif: '', slug: '' });
+  const firstCreateRef = useRef<HTMLInputElement>(null);
+
+  // Regras base
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // Debounce inputs para validação remota
+  const debouncedSlug = useDebounce(createForm.slug.trim().toLowerCase(), 350);
+  const debouncedNif = useDebounce(createForm.nif.trim(), 350);
+
+  // Validações remotas (apenas quando drawer aberto e inputs “válidos”)
+  const {
+    data: slugResp,
+    isFetching: checkingSlug,
+  } = useQuery({
+    queryKey: ['company-validate-slug', debouncedSlug],
+    queryFn: () => checkCompanySlugExists(debouncedSlug),
+    select: (d: any) => Boolean(d?.exists),
+    enabled: createOpen && debouncedSlug.length > 0,
+  });
+
+  const nifIsLocallyValid = isValidPortugueseNIF(debouncedNif);
+
+  const {
+    data: nifResp,
+    isFetching: checkingNif,
+  } = useQuery({
+    queryKey: ['company-validate-nif', debouncedNif],
+    queryFn: () => checkCompanyNifExists(debouncedNif),
+    select: (d: any) => Boolean(d?.exists),
+    // 👉 só consulta o backend se o NIF passar a validação algorítmica
+    enabled: createOpen && nifIsLocallyValid,
+  });
+
+  // Erros de formulário
+  const createErrors = {
+    name: !createForm.name.trim() ? 'Obrigatório' : '',
+    email: !createForm.email.trim()
+      ? 'Obrigatório'
+      : (!emailRegex.test(createForm.email) ? 'Email inválido' : ''),
+    nif: !createForm.nif.trim()
+      ? 'Obrigatório'
+      : (!isValidPortugueseNIF(createForm.nif.trim()) ? 'NIF inválido' : (nifResp ? 'NIF já em uso' : '')),
+    slug: !createForm.slug.trim()
+      ? 'Obrigatório'
+      : (slugResp ? 'Slug já em uso' : ''),
   };
 
-  // Lógica de filtragem
-  const filteredCompanies = companies.filter(company =>
-    company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    company.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    company.nif.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    company.slug.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const validCreate =
+    Object.values(createErrors).every((e) => !e) &&
+    !checkingSlug &&
+    !checkingNif;
+    
+  const handleCreateSubmit = async () => {
+    if (!validCreate || createCompanyMutation.isPending) return;
+    await createCompanyMutation.mutateAsync({
+      name: createForm.name.trim(),
+      email: createForm.email.trim(),
+      nif: createForm.nif.trim(),
+      slug: createForm.slug.trim().toLowerCase(),
+    });
+  };
 
-  if (isLoading) {
-    return <div className="text-center p-6">A carregar empresas...</div>;
-  }
+  if (isLoading) return <div className="text-center p-6">A carregar empresas...</div>;
+  if (error) return <div className="text-center p-6 text-red-500">Erro: {error.message}</div>;
 
-  if (error) {
-    return <div className="text-center p-6 text-red-500">Erro: {error.message}</div>;
-  }
-return (
-    // Usamos um Card como contentor principal da página
-  <Card>
-    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
-      <div>
-        <CardTitle className="text-2xl font-bold">Empresas</CardTitle>
-        <CardDescription>
-          Gestão de todas as empresas registadas no sistema.
-        </CardDescription>
-      </div>
-      
-      {/* Botão padronizado no topo direito */}
-      <Button asChild>
-        <Link to="/companies/create">
-          <Plus className="mr-2 h-4 w-4" /> Nova Empresa
-        </Link>
-      </Button>
-    </CardHeader>
-    <CardContent className="space-y-4">
-      <div className="mb-4">
-        <Input
-          type="text"
-          placeholder="Pesquisar empresas..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
+  // ======= UI =======
+  return (
+    <>
+      <ListPageTemplate<CompanyData>
+        header={{
+          icon: BriefcaseBusiness,
+          title: 'Empresas',
+          subtitle: 'Gestão de todas as empresas registadas no sistema.',
+          actions: (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nova Empresa
+            </Button>
+          ),
+        }}
 
-      {filteredCompanies.length === 0 ? (
-        <div className="text-center text-gray-600">
-          <p>Nenhuma empresa encontrada.</p>
-        </div>
-      ) : (
-        <div>
-          {/* 1. VISTA DE TABELA PARA ECRÃS MÉDIOS E GRANDES */}
-          <div className="hidden md:block rounded-md border"> {/* 'hidden md:block' -> Escondido por defeito, visível a partir de 'md' */}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>NIF</TableHead>
-                  <TableHead>Ativa</TableHead>
-                  <TableHead className="text-right">Ações</TableHead> {/* <-- NOVA COLUNA */}
-                </TableRow>
-              </TableHeader>
-<TableBody>
-  {filteredCompanies.map((company) => (
-    <TableRow
-      key={company.id}
-      onContextMenu={(e) => handleContextMenu(e, company)}
-      className="cursor-pointer hover:bg-gray-50/50 transition-colors"
-    >
-      <TableCell className="font-medium">{company.name}</TableCell>
-      <TableCell>{company.email}</TableCell>
-      <TableCell className="font-mono text-xs">{company.nif}</TableCell>
-      <TableCell>
-        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${company.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {company.isActive ? 'Ativa' : 'Inativa'}
-        </span>
-      </TableCell>
-      <TableCell className="text-right">
-        <div className="flex items-center justify-end space-x-1">
-          {/* MANTIDAS TODAS AS TUAS AÇÕES ORIGINAIS */}
-          <Button variant="ghost" size="icon" asChild title="Editar Empresa">
-            <Link to={`/companies/edit/${company.id}`}><FilePenLine className="h-4 w-4" /></Link>
-          </Button>
-          <Button variant="ghost" size="icon" asChild title="Configurar Pagamentos">
-            <Link to={`/companies/payment-config/${company.id}`}><CreditCard className="h-4 w-4" /></Link>
-          </Button>    
-          <Button variant="ghost" size="icon" asChild title="Editar Homepage">
-            <Link to={`/companies/homepage/edit/${company.id}`}><LayoutDashboard className="h-4 w-4" /></Link>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              const url = `${window.location.protocol}//${company.slug}.${process.env.REACT_APP_MAIN_DOMAIN}${window.location.port ? ':' + window.location.port : ''}`;
-              copy(url);
-              toast.success('Link copiado!');
-            }}
-            title="Copiar Link Público"
-          >
-            <Copy className="h-4 w-4" />
-          </Button>    
-          <Button variant="ghost" size="icon" asChild title="Administradores">
-            <Link to={`/company-admins/list/${company.id}`}><Users className="h-4 w-4" /></Link>
-          </Button>
-          <Button variant="ghost" size="icon" asChild title="Configurar SMTP">
-            <Link to={`/companies/smtp-config/${company.id}`}><Mail className="h-4 w-4" /></Link>
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
-  ))}
-</TableBody>
-            </Table>
-          </div>
-
-          {/* 2. VISTA DE CARTÕES PARA ECRÃS PEQUENOS */}
-          <div className="grid grid-cols-1 gap-4 md:hidden">{ 
-            filteredCompanies.map((company) => (
-              <div
-                key={company.id}
-                onContextMenu={(e) => handleContextMenu(e, company)}
-                className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 space-y-2">
-                <div className="font-bold text-lg">{company.name}</div>
-                <div className="text-sm text-muted-foreground">{company.email}</div>
-                <div className="text-sm"><strong>NIF:</strong> {company.nif}</div>
-                <div className="text-sm">
-                  <strong>Status:</strong> 
-                  <span className={company.isActive ? 'text-green-600' : 'text-red-600'}>
-                    {company.isActive ? ' Ativa' : ' Inativa'}
-                  </span>
-                </div>
+        filters={{
+          colsTemplate: FILTER_GRID_TEMPLATE,
+          children: (
+            <>
+              {/* Empresa */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-medium text-gray-600">Empresa</label>
+                <Select
+                  value={filters.companyId}
+                  onValueChange={(value) => handleSelectChange('companyId', value)}
+                >
+                  <SelectTrigger className="h-8 w-full px-2">
+                    <SelectValue placeholder="Selecionar empresa" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60 overflow-y-auto">
+                    <SelectItem value="all">Todas</SelectItem>
+                    {companyOptions.map(({ id, name }) => (
+                      <SelectItem key={id} value={id}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            ))}
+
+              {/* Email */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-medium text-gray-600">Email</label>
+                <Input
+                  name="email"
+                  placeholder="Pesquisar…"
+                  value={filters.email}
+                  onChange={handleInputChange}
+                  className="h-8 px-2"
+                />
+              </div>
+
+              {/* NIF */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-medium text-gray-600">NIF</label>
+                <Input
+                  name="nif"
+                  placeholder="Pesquisar…"
+                  value={filters.nif}
+                  onChange={handleInputChange}
+                  className="h-8 px-2"
+                />
+              </div>
+
+              {/* Ativa */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-medium text-gray-600">Ativa</label>
+                <Select
+                  value={filters.active}
+                  onValueChange={(value) => handleSelectChange('active', value)}
+                >
+                  <SelectTrigger className="h-8 w-full px-2">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60 overflow-y-auto">
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="active">Ativas</SelectItem>
+                    <SelectItem value="inactive">Inativas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Placeholder p/ alinhar com "Ações" */}
+              <div />
+            </>
+          ),
+        }}
+
+        toolbar={
+          <>
+            <span>
+              <strong>{visiveis}</strong> de {total} Empresas
+            </span>
+            <div className="flex items-center gap-2" />
+          </>
+        }
+
+        table={{
+          columns,
+          data: filteredCompanies,
+          rowKey: (c) => c.id,
+          sortBy,
+          sortOrder,
+          onSort: (k) => {
+            const key = (k as SortBy);
+            if (['name', 'email', 'nif', 'active'].includes(key)) handleSort(key as SortBy);
+          },
+          onRowContextMenu: (e, row) => handleRowContextMenu(e as any, row as CompanyData),
+          stickyHeader: true,
+          emptyState: (
+            <div className="py-10 flex flex-col items-center justify-center text-center gap-3">
+              <BriefcaseBusiness className="w-10 h-10 text-brand-500/80" />
+              <div>
+                <p className="text-sm text-gray-700 font-medium">
+                  Ainda não existem empresas com os filtros selecionados.
+                </p>
+                <p className="text-xs text-gray-500">
+                  Ajuste os filtros ou crie uma nova empresa.
+                </p>
+              </div>
+              <Button className="mt-1" onClick={() => setCreateOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Criar empresa
+              </Button>
+            </div>
+          ),
+        }}
+      />
+
+      {/* ===== Drawer: Nova Empresa ===== */}
+      <Drawer
+        isOpen={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Nova Empresa"
+        titleIcon={BriefcaseBusiness}
+        subtitle="Crie um registo base; poderá completar os detalhes posteriormente."
+        tone="brand"
+        size="md"
+        initialFocusRef={firstCreateRef}
+        headerActions={
+          // Exemplo: botão de ajuda — podes remover se não quiseres
+          <a
+            href="https://docs.geslogic.pt/empresas/criar"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-brand-600 hover:text-brand-700 underline"
+          >
+            Ajuda
+          </a>
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createCompanyMutation.isPending}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateSubmit} disabled={!validCreate || createCompanyMutation.isPending}>
+              {createCompanyMutation.isPending ? 'A criar…' : 'Criar Empresa'}
+            </Button>
+          </>
+        }
+      >
+        {/* Conteúdo do formulário (mesma lógica, layout mais agradável) */}
+        <div className="space-y-6">
+          {/* Nome */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="company-name">Nome</Label>
+            <Input
+              id="company-name"
+              ref={firstCreateRef}
+              data-autofocus
+              value={createForm.name}
+              onChange={(e) => {
+                const name = e.target.value;
+                setCreateForm(prev => ({
+                  ...prev,
+                  name,
+                  slug: prev.slug ? prev.slug : slugify(name),
+                }));
+              }}
+              placeholder="Ex.: Clínica Central"
+            />
+            <div className="min-h-[18px]">
+              {createErrors.name ? (
+                <p className="text-xs text-red-600">{createErrors.name}</p>
+              ) : (
+                <p className="text-[11px] text-gray-500">Use um nome claro e reconhecível.</p>
+              )}
+            </div>
+          </div>
+
+          {/* Linha: Email + NIF */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="company-email">Email</Label>
+              <Input
+                id="company-email"
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="geral@empresa.pt"
+              />
+              <div className="min-h-[18px]">
+                {createErrors.email ? (
+                  <p className="text-xs text-red-600">{createErrors.email}</p>
+                ) : (
+                  <p className="text-[11px] text-gray-500">&nbsp;</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="company-nif">NIF</Label>
+              <Input
+                id="company-nif"
+                value={createForm.nif}
+                onChange={(e) => setCreateForm(prev => ({ ...prev, nif: e.target.value }))}
+                placeholder="123456789"
+                className={createErrors.nif ? 'border-red-500' : ''}
+              />
+              <div className="min-h-[18px]">
+                {createErrors.nif ? (
+                  <p className="text-xs text-red-600">{createErrors.nif}</p>
+                ) : checkingNif ? (
+                  <p className="text-[11px] text-gray-500">A verificar NIF…</p>
+                ) : (
+                  <p className="text-[11px] text-gray-500">&nbsp;</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Slug */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="company-slug">Slug (subdomínio)</Label>
+            <Input
+              id="company-slug"
+              value={createForm.slug}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, slug: slugify(e.target.value) }))}
+              placeholder="clinica-central"
+              className={createErrors.slug ? 'border-red-500' : ''}
+            />
+            <div className="space-y-1">
+              <div className="min-h-[18px]">
+                {createErrors.slug ? (
+                  <p className="text-xs text-red-600">{createErrors.slug}</p>
+                ) : checkingSlug ? (
+                  <p className="text-[11px] text-gray-500">A verificar slug…</p>
+                ) : (
+                  <p className="text-[11px] text-gray-500">&nbsp;</p>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">
+                URL pública:{' '}
+                <span className="font-mono">
+                  https://{createForm.slug || 'subdominio'}.{process.env.REACT_APP_MAIN_DOMAIN}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
-      )}
-        
-        {/* O botão Voltar já não é necessário aqui, pois a navegação é feita pela Sidebar/Header */}
-      </CardContent>
+      </Drawer>
 
-
-      {/* Menu de Contexto para as ações da empresa */}
-      {contextMenu.visible && contextMenu.company && (
-        <div
-          ref={contextMenuRef}
-          className="absolute z-50 bg-white border border-gray-300 rounded-md shadow-lg py-1"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
+      {/* ===== Context Menu (portal) ===== */}
+      {cm.open && selectedCompany && (
+        <ContextMenu open={cm.open} pageX={cm.x} pageY={cm.y} onClose={closeMenu}>
           <Link
-            to={`/companies/edit/${contextMenu.company.id}`} // <-- NOVO LINK
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-            onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+            to={`/companies/edit/${selectedCompany.id}`}
+            className="block w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70 rounded-[6px] flex items-center gap-2"
+            onClick={closeMenu}
           >
             <FilePenLine className="h-4 w-4" />
             Editar
           </Link>
-          <Link 
-              to={`/companies/payment-config/${contextMenu.company.id}`}
-              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => setContextMenu({ ...contextMenu, visible: false })}
-            >
-              <CreditCard className="h-4 w-4" />
-              Config. Pagamentos
-            </Link>          
+
           <Link
-            to={`/companies/homepage/edit/${contextMenu.company.id}`} // <-- NOVO LINK
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-            onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+            to={`/companies/payment-config/${selectedCompany.id}`}
+            className="block w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70 rounded-[6px] flex items-center gap-2"
+            onClick={closeMenu}
+          >
+            <CreditCard className="h-4 w-4" />
+            Config. Pagamentos
+          </Link>
+
+          <Link
+            to={`/companies/homepage/edit/${selectedCompany.id}`}
+            className="block w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70 rounded-[6px] flex items-center gap-2"
+            onClick={closeMenu}
           >
             <LayoutDashboard className="h-4 w-4" />
             Editar página inicial
           </Link>
 
-          {/* Nova opção para ver administradores */}
-          <Link 
-            to={`/company-admins/list/${contextMenu.company.id}`}
-            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-            onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
+          <Link
+            to={`/company-admins/list/${selectedCompany.id}`}
+            className="block w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70 rounded-[6px] flex items-center gap-2"
+            onClick={closeMenu}
           >
             <Users className="h-4 w-4" />
             Administradores
           </Link>
-          
-          {/* Opção para configurar SMTP, visível apenas para Platform Admin */}
+
           {user?.role === UserRole.PLATFORM_ADMIN && (
             <Link
-              to={`/companies/smtp-config/${contextMenu.company.id}`}
-              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => setContextMenu({ ...contextMenu, visible: false })} // Fechar o menu
+              to={`/companies/smtp-config/${selectedCompany.id}`}
+              className="block w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70 rounded-[6px] flex items-center gap-2"
+              onClick={closeMenu}
             >
               <Mail className="h-4 w-4" />
               Configurar SMTP
             </Link>
           )}
+
           {user?.role === UserRole.PLATFORM_ADMIN && (
-            <button
-              onClick={
-                contextMenu.company.isActive
-                  ? handleDeactivateClick // Se está ativa, abre o modal de confirmação para desativar
-                  : handleActivateDeactivate // Se está inativa, ativa diretamente sem modal
-              }
-              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              {contextMenu.company.isActive ? 'Desativar' : 'Ativar'}
-            </button>          
+            <>
+              <div className="my-1 h-px bg-gray-800/60" />
+              <button
+                onClick={selectedCompany.isActive ? handleDeactivateClick : handleActivateDeactivate}
+                className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800/70 rounded-[6px]"
+              >
+                {selectedCompany.isActive ? 'Desativar' : 'Ativar'}
+              </button>
+            </>
           )}
-          {/* NOVO: Opção para Eliminar empresa, visível apenas para Platform Admin */}
+
           {user?.role === UserRole.PLATFORM_ADMIN && (
-            <button
-              onClick={handleDeleteCompanyClick}
-              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-            >
-              Eliminar
-            </button>
+            <>
+              <div className="my-1 h-px bg-gray-800/60" />
+              <ContextMenuItem danger onClick={handleDeleteCompanyClick}>
+                Eliminar
+              </ContextMenuItem>
+            </>
           )}
-        </div>
+        </ContextMenu>
       )}
 
-      {/* Modal de Edição (CompanyDetailsPage como overlay) */}
-{/*       {showEditModal && selectedCompanyForEdit && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-40 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6 relative">
-            <button
-              onClick={handleCloseEditModal}
-              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl font-bold"
-            >
-              &times;
-            </button>
-            <CompanyDetailsPage
-              companyId={selectedCompanyForEdit.id}
-              onClose={handleCloseEditModal} // Usar handleCloseEditModal como callback de "voltar"
-            />
-          </div>
-        </div>
-      )} */}
+      {/* ===== ConfirmDialog: Eliminar ===== */}
+      <ConfirmDialog
+        open={deleteOpen && !!selectedCompanyForDelete}
+        title="Confirmar Eliminação"
+        description={
+          selectedCompanyForDelete
+            ? <>Tem a certeza que deseja eliminar a empresa <strong>"{selectedCompanyForDelete.name}"</strong>? Esta ação é irreversível.</>
+            : undefined
+        }
+        danger
+        loading={deleteLoading || deleteCompanyMutation.isPending}
+        requireCheckboxLabel="Compreendo que esta ação é irreversível e desejo continuar."
+        onCancel={() => { if (!deleteLoading) setDeleteOpen(false); }}
+        onConfirm={() => {
+          if (!selectedCompanyForDelete) return;
+          setDeleteLoading(true);
+          deleteCompanyMutation.mutate(selectedCompanyForDelete.id);
+        }}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+      />
 
-      {/* NOVO: Modal de Confirmação de Eliminação */}
-      {showDeleteModal && selectedCompanyForDelete && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
-            <h3 className="text-xl font-bold mb-4 text-gray-900">Confirmar Eliminação</h3>
-            <p className="text-gray-700 mb-4">
-              Tem a certeza que deseja eliminar a empresa <span className="font-semibold">"{selectedCompanyForDelete.name}"</span>?
-              Esta ação é irreversível e removerá todos os dados associados a esta empresa.
-            </p>
-            <div className="flex items-center mb-6">
-              <input
-                id="confirmDeleteCompany"
-                type="checkbox"
-                className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                checked={confirmDelete}
-                onChange={(e) => setConfirmDelete(e.target.checked)}
-              />
-              <label htmlFor="confirmDeleteCompany" className="ml-2 block text-sm text-gray-900">
-                Compreendo que esta ação é irreversível e desejo continuar.
-              </label>
-            </div>
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={handleCloseDeleteModal}
-                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmDeleteCompany}
-                className={`px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                  confirmDelete ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-400 cursor-not-allowed'
-                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500`}
-                disabled={!confirmDelete || deleteCompanyMutation.isPending}
-              >
-                {deleteCompanyMutation.isPending ? 'A Eliminar...' : 'Eliminar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* NOVO: Modal de Confirmação de Desativação */}
-      {showDeactivateModal && selectedCompanyForDeactivate && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
-            <h3 className="text-xl font-bold mb-4">Confirmar Desativação</h3>
-            <p className="text-gray-700 mb-4">
-              Tem a certeza que deseja desativar a empresa <span className="font-semibold">"{selectedCompanyForDeactivate.name}"</span>?
-              <br/><br/>
-              Esta ação irá também **desativar todos os administradores** associados a esta empresa, impedindo-os de aceder à plataforma.
-            </p>
-            <div className="flex items-center mb-6">
-              <Checkbox
-                id="confirmDeactivateCompany"
-                checked={confirmDeactivate}
-                onCheckedChange={(checked) => setConfirmDeactivate(Boolean(checked))}
-              />
-              <Label htmlFor="confirmDeactivateCompany" className="ml-2">
-                Compreendo as consequências e desejo continuar.
-              </Label>
-            </div>
-            <div className="flex justify-end space-x-4">
-              <Button variant="outline" onClick={handleCloseDeactivateModal}>
-                Cancelar
-              </Button>
-              <Button
-                variant="destructive" // Usar a variante destrutiva
-                onClick={handleConfirmDeactivate}
-                disabled={!confirmDeactivate || activateDeactivateMutation.isPending}
-              >
-                {activateDeactivateMutation.isPending ? 'A Desativar...' : 'Desativar Empresa'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}      
-    </Card>
-);
+      {/* ===== ConfirmDialog: (Des)ativar ===== */}
+      <ConfirmDialog
+        open={deactOpen && !!selectedCompanyForDeactivate}
+        title={selectedCompanyForDeactivate?.isActive ? 'Confirmar Desativação' : 'Confirmar Ativação'}
+        description={
+          selectedCompanyForDeactivate?.isActive
+            ? <>Desativar a empresa <strong>"{selectedCompanyForDeactivate.name}"</strong> irá também desativar os administradores associados.</>
+            : <>Pretende ativar a empresa <strong>"{selectedCompanyForDeactivate?.name}"</strong>?</>
+        }
+        danger={!!selectedCompanyForDeactivate?.isActive}
+        loading={deactLoading || activateDeactivateMutation.isPending}
+        requireCheckboxLabel={selectedCompanyForDeactivate?.isActive ? 'Compreendo as consequências e desejo continuar.' : undefined}
+        onCancel={() => { if (!deactLoading) setDeactOpen(false); }}
+        onConfirm={() => {
+          if (!selectedCompanyForDeactivate) return;
+          setDeactLoading(true);
+          activateDeactivateMutation.mutate({
+            companyId: selectedCompanyForDeactivate.id,
+            isActive: !selectedCompanyForDeactivate.isActive,
+          });
+        }}
+        confirmText={selectedCompanyForDeactivate?.isActive ? 'Desativar' : 'Ativar'}
+        cancelText="Cancelar"
+      />
+    </>
+  );
 };
 
 export default ListCompaniesPage;

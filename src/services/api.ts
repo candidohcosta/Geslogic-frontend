@@ -82,7 +82,33 @@ async function apiFetch(endpoint: string, options: RequestInit = {}) {
   }
 
   if (response.status === 204) return;
-  return response.json();
+
+  // Evitar JSON.parse em corpo vazio ou não-JSON
+  const contentType = response.headers.get('content-type') || '';
+  const contentLength = response.headers.get('content-length');
+
+  // Alguns servidores não mandam content-length; por isso também lemos o body
+  const text = await response.text().catch(() => '');
+
+  if (!text || text.trim() === '') {
+    // Resposta OK mas sem corpo
+    return undefined;
+  }
+
+  // Só parsear JSON se o servidor indicou JSON
+  if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Em último caso, devolvemos undefined para não rebentar a UI
+      return undefined;
+    }
+  }
+
+  // Para respostas OK mas não-JSON, devolvemos o texto bruto
+  // (se preferires manter compat 100% JSON, troca por `return undefined;`)
+  return text;
+
 }
 
 // Função específica para chamadas públicas (sem cookies/auth)
@@ -106,6 +132,19 @@ async function publicApiFetch(endpoint: string, options: RequestInit = {}) {
 
   return response.json();
 }
+
+// --- NOVO: Função Helper para Chamadas POST ---
+export const apiPost = async (url: string, data: any, options?: RequestInit) => {
+    // Reutiliza a tua função principal apiFetch, passando as opções de POST
+    return apiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        // Permite que opções específicas (como autenticação) sejam passadas pelo apiFetch
+        ...options, 
+    });
+};
+// ---------------------------------------------
 
 // AUTH
 export const loginUser = (email: string, password: string) => {
@@ -213,21 +252,38 @@ export const deleteCompany = (companyId: string) => {
 export const activateDeactivateCompany = ({ companyId, isActive }: { companyId: string, isActive: boolean }) => {
   return apiFetch(`/companies/${companyId}/status`, { method: 'PUT', body: JSON.stringify({ isActive }) });
 };
-export const fetchPublicCompanyProfile = (slug: string) => {
-  return apiFetch(`/companies/public/${slug}`);
+
+export const fetchPublicHomepage = (slug: string) => {
+  return apiFetch(`/companies/public/${slug}`).then(res => res.homepageConfig);
 };
+
 export const fetchLocationByPostalCode = (code: string) => {
   return apiFetch(`/utils/postal-code/${code}`);
 };
 
-export const deleteFile = (fileId: string) => {
-  return apiFetch(`/uploads/file/${fileId}`, { method: 'DELETE' });
+export const checkCompanySlugExists = (slug: string) => {
+  return apiFetch(`/companies/validate/slug/${encodeURIComponent(slug)}`); // { exists: boolean }
 };
+
+export const checkCompanyNifExists = (nif: string) => {
+  return apiFetch(`/companies/validate/nif/${encodeURIComponent(nif)}`); // { exists: boolean }
+};
+
+export const deleteFile = (fileId: string) => {
+  return apiFetch(`/api/uploads/file/${fileId}`, { method: 'DELETE' });
+};
+
+
+
 
 // --- GESTÃO DE ADMINISTRADORES DA PLATAFORMA ---
 
 export const fetchPlatformAdmins = () => {
   return apiFetch('/users/platform-admins');
+};
+
+export const fetchPlatformAdminById = (adminId: string) => {
+  return apiFetch(`/users/platform-admins/${adminId}`);
 };
 
 export const createPlatformAdmin = (adminData: any) => {
@@ -236,6 +292,46 @@ export const createPlatformAdmin = (adminData: any) => {
     body: JSON.stringify(adminData),
   });
 };
+
+// ✅ Atualizar adminType e/ou isActive
+export const updatePlatformAdmin = (
+  adminId: string,
+  payload: Partial<{ adminType: string; isActive: boolean }>
+) => {
+  return apiFetch(`/users/platform-admins/${adminId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+};
+
+// ✅ Ativar/Desativar (atalho)
+export const togglePlatformAdminActive = (adminId: string, isActive: boolean) => {
+  return updatePlatformAdmin(adminId, { isActive });
+};
+
+// ✅ Enviar email de reset de password
+export const sendPlatformAdminPasswordResetEmail = (adminId: string) => {
+  return apiFetch(`/users/platform-admins/${adminId}/password-reset`, {
+    method: 'POST',
+    body: JSON.stringify({}), // corpo vazio por convenção
+  });
+};
+
+// ✅ Definir password diretamente
+export const setPlatformAdminPassword = (adminId: string, password: string) => {
+  return apiFetch(`/users/platform-admins/${adminId}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
+};
+
+export const deletePlatformAdmin = (adminId: string) => {
+  return apiFetch(`/users/platform-admins/${adminId}`, {
+    method: 'DELETE',
+  });
+};
+
+
 
 // COMPANY ADMINS
 export const fetchCompanyAdmins = (companyId?: string) => {
@@ -325,7 +421,7 @@ export const updateRegistrationStatus = ({ registrationId, status }: { registrat
 };
 
 export const updateFileDetails = ({ fileId, data }: { fileId: string, data: { displayName: string } }) => {
-  return apiFetch(`/uploads/file/${fileId}`, {
+  return apiFetch(`/api/uploads/file/${fileId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
@@ -525,7 +621,7 @@ export const uploadFile = (data: {
   // 2. Usamos a nossa função 'apiFetch' para consistência,
   // mas com uma pequena adaptação para ficheiros.
   return apiFetch(
-    `/uploads/file/${data.purpose}`, // O endpoint correto
+    `/api/uploads/file/${data.purpose}`, // O endpoint correto
     {
       method: 'POST',
       body: formData,
@@ -539,6 +635,14 @@ export const uploadFile = (data: {
   );
 
 };
+
+
+export async function fetchFilesByOwnerPurpose(ownerType: string, ownerId: string, purpose: string) {
+  const params = new URLSearchParams({ ownerType, ownerId, purpose });
+  const res = await apiFetch(`/api/uploads/list?${params.toString()}`);
+  return res.files || [];
+}
+
 
 
 
@@ -575,14 +679,32 @@ export const fetchMyOperatorStats = (filters: { startDate: string, endDate: stri
 
 // --- SYSTEM HEALTH ---
 
-export const checkFileSystemConsistency = () => apiFetch('/system-health/check-consistency');
+export const checkFileSystemConsistency = () =>
+  apiFetch('/system-health/check-consistency');
 
-export const cleanOrphanFiles = () => apiFetch('/system-health/clean-orphan-files', { method: 'DELETE' });
+// 🔧 Novo: aceita { dryRun, scope }  --> scope: 'uploads' | 'backups' | 'all'
+export const cleanOrphanFiles = (opts?: { dryRun?: boolean; scope?: 'uploads' | 'backups' | 'all' }) => {
+  const params = new URLSearchParams();
+  if (opts?.dryRun !== undefined) params.set('dryRun', String(opts.dryRun));
+  if (opts?.scope) params.set('scope', opts.scope);
+  const qs = params.toString();
+  return apiFetch(`/system-health/clean-orphan-files${qs ? `?${qs}` : ''}`, { method: 'DELETE' });
+};
 
-export const cleanOrphanRecords = () => apiFetch('/system-health/clean-orphan-records', { method: 'DELETE' });
+// 🔧 Novo: aceita { dryRun }
+export const cleanOrphanRecords = (opts?: { dryRun?: boolean }) => {
+  const params = new URLSearchParams();
+  if (opts?.dryRun !== undefined) params.set('dryRun', String(opts.dryRun));
+  const qs = params.toString();
+  return apiFetch(`/system-health/clean-orphan-records${qs ? `?${qs}` : ''}`, { method: 'DELETE' });
+};
 
-export const cleanFunctionallyOrphanRecords = () => {
-  return apiFetch('/system-health/clean-functional-orphans', { method: 'DELETE' });
+// 🔧 Novo: aceita { dryRun }
+export const cleanFunctionallyOrphanRecords = (opts?: { dryRun?: boolean }) => {
+  const params = new URLSearchParams();
+  if (opts?.dryRun !== undefined) params.set('dryRun', String(opts.dryRun));
+  const qs = params.toString();
+  return apiFetch(`/system-health/clean-functional-orphans${qs ? `?${qs}` : ''}`, { method: 'DELETE' });
 };
 
 // --- POLICY DOCUMENTS ---
@@ -670,7 +792,7 @@ export const deleteKiosk = (id: string) => {
 };
 
 export const fetchKioskConfig = (deviceSecret: string) => {
-  return apiFetch(`/kiosks/config/${deviceSecret}`);
+  return publicApiFetch(`/kiosks/config/${deviceSecret}`);
 };
 
 export const createTicket = (data: { serviceId: string, isPriority: boolean; customUserDataId?: string; }, deviceSecret: string) => {
@@ -704,7 +826,7 @@ export const updateDisplay = ({ id, displayData }: { id: string, displayData: an
 export const deleteDisplay = (id: string) => apiFetch(`/displays/${id}`, { method: 'DELETE' });
 
 export const fetchDisplayState = (deviceSecret: string) => {
-  return apiFetch(`/displays/state/${deviceSecret}`);
+  return publicApiFetch(`/displays/state/${deviceSecret}`);
 };
 
 
@@ -729,7 +851,7 @@ export const endOperatorSession = (sessionId: string) => {
 };
 
 export const fetchDisplayConfig = (deviceSecret: string) => {
-  return apiFetch(`/displays/config/${deviceSecret}`);
+  return publicApiFetch(`/displays/config/${deviceSecret}`);
 };
 
 export const updateTicketStatus = ({ ticketId, status }: { ticketId: string, status: TicketStatus }) => {
@@ -758,7 +880,29 @@ export const recallTicket = (ticketId: string) => {
   return apiFetch(`/tickets/${ticketId}/recall`, { method: 'PATCH' });
 };
 
-export const fetchMyActiveSession = () => apiFetch('/operator-sessions/my-active-session');
+export const fetchMyActiveSession = async () => {
+  const res = await fetch(`${BASE_URL}/operator-sessions/my-active-session`, {
+    credentials: 'include',
+  });
+
+  if (res.status === 404 || res.status === 204) {
+    return null; // sem sessão ativa
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+
+  const text = await res.text().catch(() => '');
+  if (!text || text.trim() === '') return null;
+
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try { return JSON.parse(text); } catch { return null; }
+  }
+  return null;
+};
 
 // --- QUEUE STATIONS ---
 
@@ -833,6 +977,19 @@ export const fetchOperatorSessionStats = (sessionId: string) => {
   return apiFetch(`/stats/operator-session/${sessionId}`);
 };
 
+// ✅ Atualizar operador (isActive, outros campos)
+export const toggleOperatorActive = (operatorId: string, isActive: boolean) => {
+  return apiFetch(`/users/${operatorId}/active`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+};
+
+
+
+
+
+
 // --- PRIORITY SCHEDULES ---
 
 export const fetchSchedules = (companyId?: string) => {
@@ -853,6 +1010,14 @@ export const updateSchedule = ({ id, scheduleData }: { id: string, scheduleData:
 export const deleteSchedule = (id: string) => {
   return apiFetch(`/priority-schedules/${id}`, { method: 'DELETE' });
 };
+
+export const toggleScheduleActive = (scheduleId: string, isActive: boolean) => {
+  return apiFetch(`/priority-schedules/${scheduleId}/active`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+};
+
 
 // --- USER GROUPS ---
 
@@ -907,6 +1072,16 @@ export const updateUserType = ({ id, data }: { id: string, data: any }) => {
 export const deleteUserType = (id: string) => {
   return apiFetch(`/custom-user-types/${id}`, { method: 'DELETE' });
 };
+
+// Para ativar/desativar
+export const toggleUserTypeActive = (userTypeId: string, isActive: boolean) => {
+  return apiFetch(`/custom-user-types/${userTypeId}/active`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+};
+
+
 
 // --- CUSTOM FIELD DEFINITIONS ---
 
@@ -1079,22 +1254,31 @@ export const fetchOperatorProfile = (id: string, start: string, end: string) =>
 
 // --- SUPPORT MODULE (HELPDESK) ---
 
-export const fetchSupportTickets = (filters: { 
-    status?: SupportTicketStatus, 
-    priority?: SupportTicketPriority, 
-    viewAll?: boolean,
-    page?: number,
-    search?: string
+
+export const fetchSupportTickets = (filters: {
+  status?: SupportTicketStatus;
+  priority?: SupportTicketPriority;
+  viewAll?: boolean;
+  page?: number;
+  search?: string;
+  limit?: number;
 }) => {
   const params = new URLSearchParams();
-  if (filters.status) params.append('status', filters.status);
+
+  if (filters.status)   params.append('status', filters.status);
   if (filters.priority) params.append('priority', filters.priority);
-  if (filters.viewAll) params.append('viewAll', 'true');
-  if (filters.page) params.append('page', filters.page?.toString() || '1');
-  if (filters.search) params.append('search', filters.search);
-  
-  return apiFetch(`/support?${params.toString()}`);
+
+  // Apenas se true (mantém o teu comportamento)
+  if (filters.viewAll)  params.append('viewAll', 'true');
+
+  if (typeof filters.page === 'number')   params.append('page', String(filters.page));
+  if (typeof filters.limit === 'number')  params.append('limit', String(filters.limit));
+  if (filters.search)                     params.append('search', filters.search);
+
+  const qs = params.toString();
+  return apiFetch(`/support${qs ? `?${qs}` : ''}`);
 };
+
 
 export const fetchSupportTicketById = (id: string) => {
   return apiFetch(`/support/${id}`);
@@ -1143,6 +1327,20 @@ export const checkSupportAttention = async () => {
   const res = await apiFetch('/support/check-attention');
   return res; 
 };
+
+export const getSupportUnreadSummary = () =>
+  apiFetch('/support/unread/summary');
+
+export const markSupportSeen = () =>
+  apiFetch('/support/mark-seen', { method: 'POST' });
+
+export const getTicketUnreadCount = (ticketId: string) =>
+  apiFetch(`/support/${ticketId}/unread-count`);
+
+export const markTicketRead = (ticketId: string) =>
+  apiFetch(`/support/${ticketId}/mark-read`, { method: 'POST' });
+
+
 
 // --- SCHEDULING MODULE ---
 // RECURSOS
@@ -1375,3 +1573,92 @@ export const deleteBackup = (id: string) =>
 
 export const wipeSystem = () => 
   apiFetch('/backups/danger/wipe-all', { method: 'POST' });
+
+
+// --- INTERFACES PARA O FILE MANAGER ---
+// ---------------------------------------------
+// ⚠️ NOVO TIPO: Reflete a estrutura retornada pelo FindOne do Backend
+// ---------------------------------------------
+export interface StoredFileDbRef {
+  id: string;
+  displayName: string; // Adicionado
+  storageFileName: string;
+  mimeType: string;
+  size: number;
+  uploadedBy: { // Adicionado
+    id: string;
+    email: string;
+    role: string; // Adicionado
+  } | null;
+}
+
+// ---------------------------------------------
+// ⚠️ NOVO TIPO: Reflete a estrutura de um item na lista
+// ---------------------------------------------
+
+export type FilesystemItem = {
+  name: string;
+  isDirectory: boolean;
+  isFile: boolean;
+  size: number;
+  createdAt: string | null;
+  dbReference: {
+    id: string;
+    displayName: string;
+    storageFileName: string;
+    mimeType: string;
+    size: number;
+    uploadedBy?: { id: string; email: string; role: string };
+  } | null;
+  isOrphan: boolean;
+  companySlug: string | null;
+};
+
+// ---------------------------------------------
+// ⚠️ NOVO TIPO: Reflete a estrutura de resposta completa (com Paginação)
+// ---------------------------------------------
+
+export type FilesystemResponse = {
+  path: string;
+  totalItems: number;
+  totalFolders: number;
+  totalFiles: number;
+  totalPages: number;
+  currentPage: number;
+  contents: FilesystemItem[];
+};
+
+
+
+export interface TableListResponse {
+    tables: string[];
+}
+
+// --- CHAMADAS DE API PARA O FILE MANAGER ---
+
+export const listDirectoryContents = async (
+  dir: string = 'uploads',
+  page: number = 1,
+  limit: number = 10
+): Promise<FilesystemResponse> => {
+  // mantém o mesmo endpoint e nomes de query
+  const response = await apiFetch(`/admin/fs/list?dir=${encodeURIComponent(dir)}&page=${page}&limit=${limit}`);
+  return response;
+};
+
+
+// --- INTERFACES PARA O DATABASE CONSOLE ---
+export interface DbQueryResult {
+  success: boolean;
+  result: any[]; // Array de objetos, cada objeto é uma linha
+}
+
+// --- CHAMADAS DE API PARA O DATABASE CONSOLE ---
+export const executeSqlQuery = async (sql: string): Promise<DbQueryResult> => {
+  const response = await apiPost('/admin/db/query', { sql });
+  return response;
+};
+
+export const fetchTableList = async (): Promise<TableListResponse> => {
+    return apiFetch('/admin/db/tables');
+};

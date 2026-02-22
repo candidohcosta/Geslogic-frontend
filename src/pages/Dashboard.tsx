@@ -9,10 +9,11 @@ import OperatorRouteHandler from './OperatorRouteHandler';
 import PlatformAdminDashboard from '../components/dashboards/PlatformAdminDashboard';
 import CompanyAdminDashboard from '../components/dashboards/CompanyAdminDashboard';
 import ParticipantDashboard from '../components/dashboards/ParticipantDashboard';
-import OperatorDashboard from '../components/dashboards/OperatorDashboard';
+import OperatorStatsDashboard from '../components/dashboards/OperatorStatsDashboard';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Link } from 'react-router-dom';
+import OperatorLiveDashboard from './OperatorLiveDashboard';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -31,7 +32,7 @@ const Dashboard: React.FC = () => {
     case UserRole.PARTICIPANT:
       return <ParticipantDashboard />;
     case UserRole.OPERATOR:
-      //return <OperatorDashboard />;
+      //return <OperatorStatsDashboard />;
       return <OperatorRouteHandler />;
     default:
       // Um fallback de segurança
