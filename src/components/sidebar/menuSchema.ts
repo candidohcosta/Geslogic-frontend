@@ -79,7 +79,7 @@ export const menuSchema: MenuGroup[] = [
       { label: 'Quiosques', to: '/kiosks', icon: Tablet, features: ['queues:admin'] },
       { label: 'Displays', to: '/displays', icon: Tv, features: ['queues:admin'] },
 
-      { label: 'Iniciar sessão', to: '/operator/setup', icon: UserCog, features: ['operator:session'] },
+      { label: 'Iniciar sessão', to: '/operator/setup', icon: Computer, features: ['operator:session'] },
       { label: 'Sessões Ativas', to: '/operator-sessions', icon: MonitorCheck, features: ['queues:access'] },
       { label: 'Monitorização de dispositivos', to: '/devices-monitor', icon: ActivityIcon, features: ['queues:access'] },
       { label: 'Estatísticas', to: '/dashboard/queues', icon: ChartBarStacked, features: ['queues:stats'] },
@@ -118,12 +118,12 @@ export const menuSchema: MenuGroup[] = [
     ],
   },
 
-  {
+/*   {
     id: 'operator',
     title: 'Operador',
     icon: Computer,
     items: [
       { label: 'Iniciar Sessão de Atendimento', to: '/operator/setup', icon: Computer, features: ['operator:session'] },
     ],
-  },
+  }, */
 ];
