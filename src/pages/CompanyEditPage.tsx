@@ -41,6 +41,20 @@ interface CompanyData {
   forceTwoFactorForOperators: boolean;
 }
 
+/** Verifica se um HTML tem conteúdo "real" (ignora estrutura vazia do Quill: <p><br></p>, <br>, tags, &nbsp;). */
+function isHtmlEmpty(html: string): boolean {
+  if (!html) return true;
+
+  const clean = html
+    .replace(/<p><br><\/p>/gi, '')   // parágrafo vazio do Quill
+    .replace(/<br\s*\/?>/gi, '')     // quebras de linha
+    .replace(/<[^>]*>/g, '')         // remove todas as tags
+    .replace(/&nbsp;/gi, '')         // espaços não separáveis
+    .trim();
+
+  return clean.length === 0;
+}
+
 const CompanyEditPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation() as any;
@@ -395,27 +409,59 @@ const CompanyEditPage: React.FC = () => {
           ),
         },
 
-        // Assinatura Padrão
-        {
-          title: 'Assinatura de Email Padrão',
-          description: 'Esta assinatura será adicionada automaticamente ao final dos emails.',
-          accent: true,
-          className: 'md:col-span-2',
-          content: (
-            <div className={`rounded-md border ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}>
-              <RichTextEditor
-                value={formData.defaultSignatureHtml || ''}
-                onChange={(value) => handleInputChange({ target: { name: 'defaultSignatureHtml', value } })}
-                readOnly={!isEditing}
-                uploadOwner={{
-                  ownerType: 'Company',
-                  ownerId: companyId!,
-                  purpose: FilePurpose.COMPANY_SIGNATURE_IMAGE,
-                }}
-              />
-            </div>
-          ),
-        },
+// Assinatura Padrão — NOVA SECÇÃO (igual à plataforma)
+{
+  title: 'Assinatura de Email Padrão',
+  description: 'Esta assinatura será adicionada automaticamente ao final dos emails da empresa.',
+  accent: true,
+  className: 'md:col-span-2',
+  content: (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+      {/* ESQUERDA — Editor */}
+      <div className="space-y-4">
+        <div className={`rounded-md border ${!isEditing ? 'bg-gray-100' : 'bg-white'}`}>
+          <RichTextEditor
+            value={formData.defaultSignatureHtml || ''}
+            onChange={(value) =>
+              handleInputChange({
+                target: { name: 'defaultSignatureHtml', value },
+              })
+            }
+            readOnly={!isEditing}
+            uploadOwner={{
+              ownerType: 'Company',
+              ownerId: companyId!,
+              purpose: FilePurpose.COMPANY_SIGNATURE_IMAGE,
+            }}
+          />
+        </div>
+
+        {/* Validação: não permitir assinatura vazia */}
+        {isEditing && isHtmlEmpty(formData.defaultSignatureHtml || '') && (
+          <p className="text-red-600 text-sm">A assinatura não pode ser vazia.</p>
+        )}
+      </div>
+
+      {/* DIREITA — Preview */}
+      <div className="space-y-3">
+        {/* <<< SUB‑TÍTULO DO PREVIEW >>> */}
+        <div>
+          <Label className="text-sm font-semibold text-gray-700">
+            Pré‑visualização da assinatura
+          </Label>
+        </div>
+
+          <div
+            className="border rounded p-4 bg-white min-h-[160px] prose prose-sm max-w-none"
+            dangerouslySetInnerHTML={{
+              __html: formData.defaultSignatureHtml || '',
+            }}
+          />
+        </div>
+      </div>
+  ),
+},
 
         // Segurança Operacional
         {

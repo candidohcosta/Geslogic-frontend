@@ -117,6 +117,7 @@ import { SecurityGuard } from './components/auth/SecurityGuard';
 import OperatorIndexRedirect from './pages/OperatorIndexRedirect';
 import { InfoModalPortal } from './components/system/InfoDialogPortal';
 import { ConfirmModalPortal } from './components/system/ConfirmModalPortal';
+import PlatformEmailSignaturePage from './pages/PlatformEmailSignaturePage';
 
 const queryClient = new QueryClient();
 
@@ -313,6 +314,7 @@ function AppLayout() {
                       <Route path="/platform-admins" element={<PlatformAdminsPage />} />
                       <Route path="/platform-admins/create" element={<PlatformAdminFormPage />} />
                       <Route path="/platform-admins/edit/:id" element={<PlatformAdminFormPage />} />
+                      <Route path="/admin/platform-email-signature" element={<PlatformEmailSignaturePage />} />
                       <Route path="/companies/create" element={<CreateCompanyPage />} />
 
                       <Route path="/change-password" element={<ChangePasswordPage />} />

@@ -8,6 +8,7 @@ export type FeatureKey =
   // Plataforma / Empresas / Billing
   | 'platform:access'
   | 'platform:admins.manage'
+  | 'platform:settings'
   | 'companies:access'
   | 'companies:create'
   | 'companies:edit'

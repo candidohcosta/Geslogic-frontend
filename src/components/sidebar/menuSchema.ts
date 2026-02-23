@@ -48,6 +48,7 @@ export const menuSchema: MenuGroup[] = [
       { label: 'Backups', to: '/backups', icon: DatabaseBackup, features: ['system:backups.view'] },
       { label: 'Gestão de Ficheiros', to: '/admin/file-manager', icon: Files, features: ['system:file-manager'] },
       { label: 'Gestão de BD', to: '/admin/db-console', icon: Database, features: ['system:db-console'] },
+      { label: 'Configurações', to: '/admin/platform-email-signature', icon: Settings, features: ['platform:settings'] },
       // (quando existir)
       // { label: 'Billing & Subscrições', to: '/platform/billing-center', icon: CreditCard, features: ['billing:center'] },
     ],
