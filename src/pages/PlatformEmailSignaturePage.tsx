@@ -141,6 +141,7 @@ const PlatformEmailSignaturePage: React.FC = () => {
     {
       title: 'Pré‑visualização',
       description: 'Pré‑visualização em tempo real da assinatura renderizada.',
+      accent: true,
       className: 'md:col-span-1',
       content: (
         <div className="space-y-4">

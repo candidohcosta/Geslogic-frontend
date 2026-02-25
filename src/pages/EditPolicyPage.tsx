@@ -1,257 +1,388 @@
 // frontend/src/pages/EditPolicyPage.tsx
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchPolicyById, createPolicy, updatePolicy } from '../services/api';
+import {
+  fetchPolicyById,
+  createPolicy,
+  updatePolicy,
+  fetchCompanies,
+} from '../services/api';
 import { UserRole } from '../types/user';
 import { FilePurpose } from '../types/file';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Label } from '../components/ui/Label';
 import { Textarea } from '../components/ui/Textarea';
 import { SingleFileUpload } from '../components/ui/SingleFileUpload';
 import { v4 as uuidv4 } from 'uuid';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'; 
-import { fetchCompanies } from '../services/api'; 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select';
+import { DetailFormTemplate } from '../components/templates/DetailFormTemplate';
+import { FileText, Eye, X } from 'lucide-react';
 
 interface FileData {
   id: string;
   url: string;
   displayName: string;
 }
-
 interface CompanyOption {
   id: string;
   name: string;
 }
+
+/** TODO: Ler isto das Configurações da Plataforma (ex.: /platform-settings) */
+const MAX_FILE_MB = 10;
 
 const EditPolicyPage: React.FC = () => {
   const navigate = useNavigate();
   const { policyId } = useParams<{ policyId?: string }>();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  
+
   const isEditing = !!policyId;
 
   const [name, setName] = useState('');
   const [consentText, setConsentText] = useState('');
   const [documentFile, setDocumentFile] = useState<FileData | null>(null);
 
-  const { data: existingPolicy, isLoading } = useQuery({
+  // Preview drawer (reutiliza padrão do File Manager)
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const { data: existingPolicy, isLoading: isLoadingPolicy } = useQuery({
     queryKey: ['policy', policyId],
     queryFn: () => fetchPolicyById(policyId!),
-    enabled: isEditing, // Só busca se estiver a editar
+    enabled: isEditing,
   });
 
-   const [tempOwnerId] = useState(() => {
-    const id = `temp_${uuidv4()}`;
-    console.log('DEBUG: tempOwnerId gerado:', id); // <-- LOG AQUI
-    return id;
+  // ID temporário para associação do upload antes de criar o registo
+  const [tempOwnerId] = useState(() => `temp_${uuidv4()}`);
+
+  // Empresa selecionada (para Platform Admin)
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+
+  // Empresas (apenas para Platform Admin)
+  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery<CompanyOption[], Error>({
+    queryKey: ['companies'],
+    queryFn: fetchCompanies,
+    enabled: user?.role === UserRole.PLATFORM_ADMIN,
   });
 
-// Estado para a empresa selecionada (apenas para Platform Admin)
-const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  // Preload dos campos quando em edição / defaults quando em criação
+  useEffect(() => {
+    if (isEditing && existingPolicy) {
+      setName(existingPolicy.name);
+      setConsentText(existingPolicy.consentText);
 
-// useQuery para buscar a lista de empresas (apenas para Platform Admin)
-const { data: companies = [], isLoading: isLoadingCompanies } = useQuery<CompanyOption[], Error>({
-  queryKey: ['companies'],
-  queryFn: fetchCompanies,
-  enabled: user?.role === UserRole.PLATFORM_ADMIN, // Só busca se for Platform Admin
-});
+      if (existingPolicy.document) {
+        setDocumentFile({
+          id: existingPolicy.document.id,
+          url: existingPolicy.document.url,
+          displayName: existingPolicy.document.displayName,
+        });
+      } else {
+        setDocumentFile(null);
+      }
 
-  console.log('TESTE DA CONSOLA:', tempOwnerId);
-
-useEffect(() => {
-  if (isEditing && existingPolicy) {
-    setName(existingPolicy.name);
-    setConsentText(existingPolicy.consentText);
-    
-    // Lógica para o documento
-    if (existingPolicy.document) {
-      setDocumentFile({ 
-        id: existingPolicy.document.id, 
-        url: existingPolicy.document.url, 
-        displayName: existingPolicy.document.displayName 
-      });
-    } else {
-      setDocumentFile(null); // Limpa se não houver documento
+      if (existingPolicy.company) {
+        setSelectedCompanyId(existingPolicy.company.id);
+      } else {
+        setSelectedCompanyId(null); // Plataforma
+      }
+    } else if (!isEditing && user?.role === UserRole.PLATFORM_ADMIN) {
+      setSelectedCompanyId(null); // Plataforma por omissão
     }
-    
-    // +++ LÓGICA DO selectedCompanyId PARA EDIÇÃO +++
-    // Se a política já tem uma empresa, selecionamo-la no dropdown
-    if (existingPolicy.company) {
-      setSelectedCompanyId(existingPolicy.company.id);
-    } else {
-      setSelectedCompanyId(null); // Se não tem empresa, é da Plataforma
-    }
-  } 
-  // +++ LÓGICA DO selectedCompanyId PARA CRIAÇÃO +++
-  // Se estamos a criar E é um Platform Admin E temos empresas carregadas...
-  // ...definimos a seleção para 'Plataforma' por defeito.
-  else if (!isEditing && user?.role === UserRole.PLATFORM_ADMIN) {
-    setSelectedCompanyId(null); // Define o padrão para 'Plataforma' (null)
-  }
+  }, [existingPolicy, isEditing, user?.role]);
 
-}, [existingPolicy, isEditing, user?.role]); 
-
-
-    // UMA MUTAÇÃO PARA CRIAR
-    const { mutate: createPolicyMutate, isPending: isCreating } = useMutation({
+  // Mutations
+  const { mutate: createPolicyMutate, isPending: isCreating } = useMutation({
     mutationFn: createPolicy,
     onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['policies'] });
-        navigate('/policy-documents');
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      navigate('/policy-documents');
     },
-    });
+  });
 
-    // UMA MUTAÇÃO PARA ATUALIZAR
-    const { mutate: updatePolicyMutate, isPending: isUpdating } = useMutation({
+  const { mutate: updatePolicyMutate, isPending: isUpdating } = useMutation({
     mutationFn: updatePolicy,
     onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['policies'] });
-        queryClient.invalidateQueries({ queryKey: ['policy', policyId] });
-        navigate('/policy-documents');
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      queryClient.invalidateQueries({ queryKey: ['policy', policyId] });
+      navigate('/policy-documents');
     },
-    });
+  });
 
-// +++ LÓGICA DE VALIDAÇÃO DO FORMULÁRIO +++
-// Usa useMemo para que só seja re-calculado quando os estados mudam
-const isFormValid = useMemo(() => {
-  const allFieldsFilled = name.trim() !== '' && consentText.trim() !== '';
-  const documentAttached = documentFile !== null;
-  
-  // Se estiver a criar, todos os campos e o documento são necessários
-  if (!isEditing) {
-    return allFieldsFilled && documentAttached;
+  // Validação do formulário
+  const isFormValid = useMemo(() => {
+    const allFieldsFilled = name.trim() !== '' && consentText.trim() !== '';
+    const documentAttached = documentFile !== null;
+
+    if (!isEditing) return allFieldsFilled && documentAttached;
+    return allFieldsFilled;
+  }, [name, consentText, documentFile, isEditing]);
+
+  const isPending = isCreating || isUpdating;
+
+  // Guardas de acesso — não quebram a ordem dos hooks
+  const isForbidden =
+    !user || (user.role !== UserRole.PLATFORM_ADMIN && user.role !== UserRole.COMPANY_ADMIN);
+
+  // Submit (sem evento – chamamos diretamente no botão)
+  const submitPolicy = () => {
+    const finalOwnerIdForFile = isEditing ? policyId! : tempOwnerId;
+
+    const basePolicyData = { name, consentText };
+    const policyDataWithDocument = { ...basePolicyData, document_file_id: documentFile?.id || null };
+
+    let finalPolicyDataToSend: any = { ...policyDataWithDocument };
+
+    // companyId — lógica conforme o tipo de utilizador
+    if (!isEditing && user?.role === UserRole.COMPANY_ADMIN && user.company?.id) {
+      finalPolicyDataToSend = { ...finalPolicyDataToSend, companyId: user.company.id };
+    } else if (user?.role === UserRole.PLATFORM_ADMIN) {
+      // selectedCompanyId || null para "Plataforma"
+      finalPolicyDataToSend = { ...finalPolicyDataToSend, companyId: selectedCompanyId || null };
+    }
+
+    // tempOwnerId apenas na criação quando já existe upload
+    if (!isEditing && documentFile?.id) {
+      finalPolicyDataToSend = { ...finalPolicyDataToSend, tempOwnerId: finalOwnerIdForFile };
+    }
+
+    if (isEditing) {
+      updatePolicyMutate({ policyId: policyId!, data: finalPolicyDataToSend });
+    } else {
+      createPolicyMutate(finalPolicyDataToSend);
+    }
+  };
+
+  // ======== RETURNS SEGUROS ========
+  if (isForbidden) return <Navigate to="/dashboard" />;
+  if (isEditing && isLoadingPolicy) {
+    return (
+      <DetailFormTemplate
+        header={{
+          icon: FileText,
+          title: 'Editar Política',
+          subtitle: 'A carregar os dados da política…',
+          actions: (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => navigate(-1)}>Cancelar</Button>
+              <Button disabled>Guardar</Button>
+            </div>
+          ),
+        }}
+        sections={[
+          {
+            content: <div className="text-sm text-gray-600">A carregar…</div>,
+          },
+        ]}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => navigate(-1)}>Cancelar</Button>
+            <Button disabled>Guardar</Button>
+          </>
+        }
+      />
+    );
   }
-  // Se estiver a editar, os campos são necessários, e o documento
-  // pode ser opcional ou existente
-  return allFieldsFilled; 
 
-}, [name, consentText, documentFile, isEditing]);
-// --- FIM DA LÓGICA DE VALIDAÇÃO ---
+  // ======== HEADER ========
+  const header = {
+    icon: FileText,
+    title: isEditing ? 'Editar Política de Privacidade' : 'Criar Nova Política de Privacidade',
+    subtitle: 'Preencha os detalhes e anexe o documento.',
+    // ❗ Botões do footer duplicados no header
+    actions: (
+      <div className="flex items-center gap-2">
+        <Button variant="outline" onClick={() => navigate(-1)}>Cancelar</Button>
+        <Button onClick={submitPolicy} disabled={isPending || !isFormValid}>
+          {isPending ? 'A Guardar…' : isEditing ? 'Guardar Alterações' : 'Criar Política'}
+        </Button>
+      </div>
+    ),
+  };
 
-    // Combina os estados de 'pending' para o botão
-    const isPending = isCreating || isUpdating;
-
-  // Adicionar um log para o estado do botão
-  console.log('--- EditPolicyPage ---');
-  console.log('isCreating:', isCreating);
-  console.log('isUpdating:', isUpdating);
-  console.log('isPending (disabled prop):', isPending);
-  console.log('----------------------');
-
-
-    const handleSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-
-      const finalOwnerIdForFile = isEditing ? policyId! : tempOwnerId;
-      const basePolicyData = { name, consentText };
-      const policyDataWithDocument = { ...basePolicyData, document_file_id: documentFile?.id || null };
-      let finalPolicyDataToSend: any = { ...policyDataWithDocument };
-
-      // --- AQUI ESTÁ A CORREÇÃO PARA O 'companyId' (integrada na tua lógica) ---
-      // Se estamos a CRIAR uma política E o utilizador é um Company Admin,
-      // adicionamos o companyId para que o backend possa validar.
-      if (!isEditing && user?.role === UserRole.COMPANY_ADMIN && user.company?.id) {
-        finalPolicyDataToSend = { ...finalPolicyDataToSend, companyId: user.company?.id };
-      }
-      // Se for Platform Admin e tiver especificado um companyId no formulário,
-      // o que faríamos com um Select de empresas (funcionalidade ainda por adicionar)
-      else if (user?.role === UserRole.PLATFORM_ADMIN) {
-         finalPolicyDataToSend = { ...finalPolicyDataToSend, companyId: selectedCompanyId || null };
-       }
-      // --- FIM DA CORREÇÃO ---
-
-      // A tua lógica de 'tempOwnerId' e 'finalOwnerIdForFile' é importante para o updateFileOwner.
-      // Vamos garantir que este campo é passado para a mutação de criação.
-      // NOVO: Adiciona tempOwnerId ao payload apenas para a criação se houver um ficheiro
-      if (!isEditing && documentFile?.id) {
-        finalPolicyDataToSend = { ...finalPolicyDataToSend, tempOwnerId: finalOwnerIdForFile };
-      }
-
-      if (isEditing) {
-        updatePolicyMutate({ policyId: policyId!, data: finalPolicyDataToSend });
-      } else {
-        createPolicyMutate(finalPolicyDataToSend);
-      }
-    };
-  
-  if (!user || (user.role !== UserRole.PLATFORM_ADMIN && user.role !== UserRole.COMPANY_ADMIN)) return <Navigate to="/dashboard" />;
-  if (isLoading) return <div>A carregar...</div>;
-
-  return (
-    <Card className="max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle>{isEditing ? 'Editar Política' : 'Criar Nova Política'}</CardTitle>
-        <CardDescription>Preencha os detalhes e anexe o documento PDF.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+  // ======== SECTIONS (DetailFormTemplate) ========
+  const generalSection = {
+    title: 'Informação Geral',
+    description: 'Dados base da política e empresa proprietária.',
+    accent: true,
+    content: (
+      <div className="grid grid-cols-1 gap-4">
         <div className="grid gap-1.5">
-          <Label htmlFor="name">Nome da Política <span className="text-red-500">*</span></Label>
-          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="consentText">Texto de Consentimento <span className="text-red-500">*</span></Label>
-          <Textarea id="consentText" value={consentText} onChange={(e) => setConsentText(e.target.value)} />
-        </div>
-{/* +++ AQUI ESTÁ O NOVO SELECT PARA A EMPRESA +++ */}
-{user?.role === UserRole.PLATFORM_ADMIN && (
-  <div className="grid w-full items-center gap-1.5">
-    <Label htmlFor="ownerCompany">Empresa Proprietária (Opcional)</Label>
-    <Select
-      value={selectedCompanyId || 'platform'} // 'platform' é um valor que representa null
-      onValueChange={(value) => setSelectedCompanyId(value === 'platform' ? null : value)}
-      disabled={isLoadingCompanies}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder="Selecione uma empresa..." />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="platform">Plataforma (Padrão)</SelectItem>
-        {companies.map((comp: CompanyOption) => (
-          <SelectItem key={comp.id} value={comp.id}>{comp.name}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
-)}
-{/* --- FIM DO NOVO SELECT --- */}        
-        <div className="grid gap-1.5">
-          <Label>Documento PDF <span className="text-red-500">*</span></Label>
-          <SingleFileUpload
-            ownerType="PolicyDocument"
-            ownerId={isEditing ? (policyId!) : tempOwnerId} // Usa um ID temporário se estiver a criar
-            purpose={FilePurpose.POLICY_DOCUMENT} // Podemos criar um 'POLICY_DOCUMENT'
-            accept=".pdf,.doc,.docx"
-            // A 'prop' agora lê do nosso novo estado
-            currentFileUrl={documentFile?.url}
-            currentFileName={documentFile?.displayName || null}  // Passa o nome do ficheiro
-            onUploadSuccess={(newFile) => {
-                console.log('DEBUG: SingleFileUpload onUploadSuccess. newFile.id:', newFile.id);
-              // Quando o upload é bem-sucedido, ATUALIZAMOS O NOSSO ESTADO LOCAL
-              setDocumentFile({ id: newFile.id, url: newFile.url, displayName: newFile.displayName });
-            }}
-            
-            onFileClear={() => setDocumentFile(null)}
+          <Label htmlFor="name">
+            Nome da Política <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ex.: Política de Privacidade"
           />
         </div>
-      </CardContent>
-      <CardFooter className="justify-end space-x-2">
-        <div className="flex-grow text-sm text-muted-foreground mr-4 text-left">
-          {isEditing 
-            ? 'Campos com * são obrigatórios.' 
-            : 'Todos os campos são obrigatórios para criar uma nova política.'}
+
+        {user?.role === UserRole.PLATFORM_ADMIN && (
+          <div className="grid gap-1.5">
+            <Label htmlFor="ownerCompany">Empresa Proprietária (opcional)</Label>
+            <Select
+              value={selectedCompanyId ?? 'platform'}
+              onValueChange={(value) => setSelectedCompanyId(value === 'platform' ? null : value)}
+              disabled={isLoadingCompanies}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione uma empresa..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="platform">Plataforma (Padrão)</SelectItem>
+                {companies.map((c: CompanyOption) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-500">
+              Se deixar “Plataforma (Padrão)”, o documento pertencerá à Geslogic/Plataforma.
+            </p>
+          </div>
+        )}
+      </div>
+    ),
+  };
+
+  const documentSection = {
+    title: 'Documento',
+    description: `Anexe o documento (tamanho máx. ${MAX_FILE_MB}MB; configurável na Plataforma).`,
+    accent: true,
+    content: (
+      <div className="grid gap-3">
+        <div className="flex items-center justify-between">
+          <Label>Documento PDF <span className="text-red-500">*</span></Label>
+          {/* Botão de Pré-visualização (apenas quando existe ficheiro) */}
+          {documentFile?.url && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPreviewOpen(true)}
+              title="Pré-visualizar documento"
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Pré-visualizar
+            </Button>
+          )}
         </div>
-        <Button variant="outline" onClick={() => navigate(-1)}>Cancelar</Button>
-        <Button onClick={handleSubmit} disabled={isPending || !isFormValid}>
-          {isPending ? 'A Guardar...' : (isEditing ? 'Guardar Alterações' : 'Criar Política')}
-        </Button>
-      </CardFooter>
-    </Card>
+
+        <SingleFileUpload
+          ownerType="PolicyDocument"
+          ownerId={isEditing ? policyId! : tempOwnerId}
+          purpose={FilePurpose.POLICY_DOCUMENT}
+          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+          currentFileUrl={documentFile?.url || null}
+          currentFileName={documentFile?.displayName || null}
+          onUploadSuccess={(newFile) => {
+            setDocumentFile({
+              id: newFile.id,
+              url: newFile.url,
+              displayName: newFile.displayName,
+            });
+          }}
+          onFileClear={() => setDocumentFile(null)}
+        />
+
+        <div className="text-xs text-gray-500">
+          Formatos permitidos: PDF, DOC, DOCX (e imagens para pré‑visualização). Tamanho máximo: {MAX_FILE_MB}MB. <br />
+          <span className="italic">
+            (No futuro, este limite será lido das Configurações da Plataforma.)
+          </span>
+        </div>
+      </div>
+    ),
+  };
+
+  const consentSection = {
+    title: 'Texto de Consentimento',
+    description: 'Texto apresentado ao utilizador para obter consentimento explícito.',
+    accent: true,
+    className: 'md:col-span-2', // ocupar 2 colunas em md+ (mais confortável para texto)
+    content: (
+      <div className="grid gap-1.5">
+        <Label htmlFor="consentText">
+          Texto de Consentimento <span className="text-red-500">*</span>
+        </Label>
+        <Textarea
+          id="consentText"
+          value={consentText}
+          onChange={(e) => setConsentText(e.target.value)}
+          rows={10}
+          placeholder="Insira aqui o texto de consentimento…"
+        />
+        <p className="text-xs text-gray-500">
+          Recomenda-se linguagem clara e objetiva. Pode incluir links para a política de privacidade.
+        </p>
+      </div>
+    ),
+  };
+
+  // ======== ACTIONS (sticky bottom) ========
+  const actions = (
+    <>
+      <div className="flex-grow text-sm text-muted-foreground mr-4 text-left">
+        {isEditing ? 'Campos com * são obrigatórios.' : 'Todos os campos são obrigatórios para criar uma nova política.'}
+      </div>
+      <Button variant="outline" onClick={() => navigate(-1)}>Cancelar</Button>
+      <Button onClick={submitPolicy} disabled={isPending || !isFormValid}>
+        {isPending ? 'A Guardar…' : isEditing ? 'Guardar Alterações' : 'Criar Política'}
+      </Button>
+    </>
+  );
+
+  return (
+    <>
+      <DetailFormTemplate
+        header={header}
+        sections={[generalSection, documentSection, consentSection]}
+        actions={actions}
+        columnsMd={2}
+      />
+
+      {/* PREVIEW DRAWER (estilo File Manager) */}
+      {previewOpen && documentFile?.url && (
+        <div className="fixed inset-0 z-[70] flex">
+          <div className="flex-1 bg-black/40" onClick={() => setPreviewOpen(false)} />
+          <div className="w-full sm:w-[520px] md:w-[640px] lg:w-[720px] h-full bg-white shadow-2xl border-l p-4 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <div className="min-w-0">
+                <div className="text-sm text-gray-500">Pré-visualização</div>
+                <div className="font-semibold truncate" title={documentFile.displayName || documentFile.url}>
+                  {documentFile.displayName || documentFile.url}
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setPreviewOpen(false)} aria-label="Fechar">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="flex-1 border rounded-md overflow-hidden bg-gray-50 flex items-center justify-center">
+              {/* Heurística simples: PDF usa iframe; imagens usam img; outros mostram fallback */}
+              {/\.(pdf)(\?.*)?$/i.test(documentFile.url) ? (
+                <iframe src={documentFile.url} title="PDF" className="w-full h-full" />
+              ) : /\.(png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i.test(documentFile.url) ? (
+                <img src={documentFile.url} alt="preview" className="max-w-full max-h-full object-contain" />
+              ) : (
+                <div className="p-6 text-sm text-gray-600 text-center">
+                  Pré-visualização não suportada. Pode descarregar o ficheiro a partir do link do upload.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 flex items-center justify-end">
+              <Button variant="outline" onClick={() => setPreviewOpen(false)}>Fechar</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

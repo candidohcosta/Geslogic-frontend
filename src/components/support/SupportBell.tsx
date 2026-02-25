@@ -47,7 +47,7 @@ const SupportBell: React.FC = () => {
 
     // ⬅️ CORREÇÃO CRÍTICA: se já está ligado, fazer joinList já
     const doJoin = async () => {
-      try { joinList(user.company?.id ?? null); } catch {}
+      try { joinList(); } catch {}
       try {
         const summary = await getSupportUnreadSummary();
         setHasAttention((summary?.totalUnread ?? 0) > 0);

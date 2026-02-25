@@ -29,7 +29,7 @@ import { Checkbox } from '../../components/ui/Checkbox';
 import { Label } from '../../components/ui/Label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/Select';
 import {
-  Send, Paperclip, CheckCircle2, AlertTriangle, Loader2,
+  Paperclip, CheckCircle2, AlertTriangle, Loader2,
   Monitor, ArrowUpCircle, X, Download, Clock, ArrowLeft, History, LifeBuoy
 } from 'lucide-react';
 import { PriorityBadge, StatusBadge } from '../../lib/support-utils';
@@ -44,7 +44,7 @@ type IncomingMessage = {
   sender: { id: string; firstName?: string; lastName?: string; email?: string };
 };
 
-const CHAT_HEIGHT_CLASS = 'h-[520px]';
+const CHAT_HEIGHT_CLASS = 'max-h-[calc(100vh-560px)]';
 
 const SupportDetailPage: React.FC = () => {
   const navigate = useNavigate();
@@ -166,10 +166,38 @@ const SupportDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['supportTicket', ticketId] });
     };
 
+    // NOVO: Receber read receipts em tempo real
+    const onReadReceipt = (payload: { ticketId: string; readerUserId: string; lastReadAt: string | Date }) => {
+      if (!ticketId || payload.ticketId !== ticketId) return;
+
+      const readerId = payload.readerUserId;
+      const lastReadTs = new Date(payload.lastReadAt).getTime();
+
+      // Marca como lidas as MINHAS mensagens com createdAt <= lastRead do leitor
+      queryClient.setQueryData(['supportTicket', ticketId], (oldData: SupportTicket | undefined) => {
+        if (!oldData) return oldData;
+        const next: any = { ...oldData };
+        next.messages = (oldData as any).messages?.map((m: any) => {
+          if (!m) return m;
+          const isMine = m.sender?.id === user?.id;
+          if (!isMine) return m; // só nos interessam "as minhas" para mostrar o selo
+          const createdTs = new Date(m.createdAt).getTime();
+
+          // se outro utilizador (não eu) já leu depois desta msg, então está lida
+          if (readerId !== user?.id && createdTs <= lastReadTs) {
+            return { ...m, readByOthers: true };
+          }
+          return m;
+        }) || [];
+        return next;
+      });
+    };
+
     s.on('connect', onConnect);
     s.on('connect_error', onConnectError);
     s.on('newMessage', onNewMessage);
     s.on('statusChange', onStatusChange);
+    s.on('readReceipt', onReadReceipt); // 👈 NOVO
 
     return () => {
       try { leaveTicket(ticketId); } catch {}
@@ -177,6 +205,7 @@ const SupportDetailPage: React.FC = () => {
       s.off('connect_error', onConnectError);
       s.off('newMessage', onNewMessage);
       s.off('statusChange', onStatusChange);
+      s.off('readReceipt', onReadReceipt); // 👈 NOVO
     };
   }, [ticketId, user?.id, queryClient]);
 
@@ -381,17 +410,25 @@ const SupportDetailPage: React.FC = () => {
         </UtilitySection>
       )}
 
-      {/* Layout 2 colunas */}
-      <div className="flex flex-col lg:flex-row gap-4 min-h-0">
-        {/* Chat */}
-        <UtilitySection withAccent className="flex-1">
+      {/**
+       * LAYOUT 3 COLUNAS EM DESKTOP
+       * - Coluna 1: Chat
+       * - Coluna 2 (meio): Detalhes + Anexos
+       * - Coluna 3 (direita): Contexto técnico
+       */}
+      <div className="
+        grid gap-4 min-h-0
+        lg:grid-cols-[minmax(0,1fr)_320px_320px]
+      ">
+        {/* Coluna 1 — Chat */}
+        <UtilitySection withAccent className="min-w-0">
           <div
             ref={scrollViewportRef}
             className={`overflow-y-auto rounded-lg bg-gray-50/50 p-4 space-y-4 ${CHAT_HEIGHT_CLASS}`}
           >
-            {ticket.messages?.map((msg) => {
+            {ticket.messages?.map((msg: any) => {
               const isMe = msg.sender.id === user?.id;
-              const isInternal = (msg as any).isInternalNote;
+              const isInternal = msg.isInternalNote;
 
               if (isInternal && !(user?.role === UserRole.PLATFORM_ADMIN || user?.role === UserRole.COMPANY_ADMIN)) {
                 return null;
@@ -420,11 +457,11 @@ const SupportDetailPage: React.FC = () => {
                       <span>{new Date(msg.createdAt).toLocaleString()}</span>
                     </div>
 
-                    <div className="whitespace-pre-wrap text-sm">{(msg as any).message}</div>
+                    <div className="whitespace-pre-wrap text-sm">{msg.message}</div>
 
-                    {(msg as any).attachments && (msg as any).attachments.length > 0 && (
+                    {msg.attachments && msg.attachments.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        {(msg as any).attachments.map((att: any, idx: number) => (
+                        {msg.attachments.map((att: any, idx: number) => (
                           <a
                             key={idx}
                             href={att.fileUrl}
@@ -439,6 +476,21 @@ const SupportDetailPage: React.FC = () => {
                             <Download className="w-3 h-3 ml-auto opacity-50" />
                           </a>
                         ))}
+                      </div>
+                    )}
+
+                    {/* indicador de não lida (apenas para mensagens minhas e ainda não lidas por terceiros) */}
+                    {isMe && !msg.readByOthers && (
+                      <div
+                        className={`mt-1 text-[10px] italic ${
+                          isInternal
+                            ? 'text-yellow-700'
+                            : isMe
+                            ? 'text-blue-100'
+                            : 'text-gray-400'
+                        }`}
+                      >
+                        (não lida)
                       </div>
                     )}
                   </div>
@@ -539,9 +591,8 @@ const SupportDetailPage: React.FC = () => {
           )}
         </UtilitySection>
 
-
-        {/* Coluna direita */}
-        <div className="w-full lg:w-80 space-y-4">
+        {/* Coluna 2 — Detalhes + Anexos */}
+        <div className="space-y-4 min-h-0 overflow-y-auto max-h-[calc(100vh-200px)]">
           <UtilitySection withAccent>
             <div className="text-sm space-y-3">
               <div>
@@ -608,7 +659,10 @@ const SupportDetailPage: React.FC = () => {
               </div>
             </UtilitySection>
           )}
+        </div>
 
+        {/* Coluna 3 — Contexto técnico */}
+        <div className="space-y-4 min-h-0 overflow-y-auto max-h-[calc(100vh-200px)]">
           {ticket.deviceContext && (
             <UtilitySection withAccent>
               <div className="text-sm space-y-3">

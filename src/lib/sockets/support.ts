@@ -8,6 +8,7 @@ export type SupportEvents = {
   statusChange: (status: string) => void;
   connect: () => void;
   connect_error: (err: unknown) => void;
+  readReceipt?: (payload: any) => void; // opcional
 };
 
 export function getSupportSocket(): Socket {
@@ -17,9 +18,11 @@ export function getSupportSocket(): Socket {
 export function createSupportChannel() {
   const s = getSupportSocket();
 
-  const joinList = (companyId: string | null) => {
-    try { s.emit('joinList', { companyId }); } catch {}
+  // ⚠ Backend não usa companyId → tornamos este argumento opcional
+  const joinList = () => {
+    try { s.emit('joinList'); } catch {}
   };
+
   const leaveList = () => {
     try { s.emit('leaveList'); } catch {}
   };
@@ -27,6 +30,7 @@ export function createSupportChannel() {
   const joinTicket = (ticketId: string) => {
     try { s.emit('joinTicket', ticketId); } catch {}
   };
+
   const leaveTicket = (ticketId: string) => {
     try { s.emit('leaveTicket', ticketId); } catch {}
   };

@@ -1258,6 +1258,8 @@ export const fetchOperatorProfile = (id: string, start: string, end: string) =>
 export const fetchSupportTickets = (filters: {
   status?: SupportTicketStatus;
   priority?: SupportTicketPriority;
+  excludeClosed?: boolean;
+  companyId?: string;
   viewAll?: boolean;
   page?: number;
   search?: string;
@@ -1265,20 +1267,26 @@ export const fetchSupportTickets = (filters: {
 }) => {
   const params = new URLSearchParams();
 
-  if (filters.status)   params.append('status', filters.status);
+  if (filters.status) params.append('status', filters.status);
   if (filters.priority) params.append('priority', filters.priority);
 
-  // Apenas se true (mantém o teu comportamento)
-  if (filters.viewAll)  params.append('viewAll', 'true');
+  if (filters.excludeClosed) params.append('excludeClosed', 'true');
+  if (filters.companyId) params.append('companyId', filters.companyId);
 
-  if (typeof filters.page === 'number')   params.append('page', String(filters.page));
-  if (typeof filters.limit === 'number')  params.append('limit', String(filters.limit));
-  if (filters.search)                     params.append('search', filters.search);
+  if (filters.viewAll) params.append('viewAll', 'true');
+
+  if (typeof filters.page === 'number')
+    params.append('page', String(filters.page));
+
+  if (typeof filters.limit === 'number')
+    params.append('limit', String(filters.limit));
+
+  if (filters.search)
+    params.append('search', filters.search);
 
   const qs = params.toString();
   return apiFetch(`/support${qs ? `?${qs}` : ''}`);
 };
-
 
 export const fetchSupportTicketById = (id: string) => {
   return apiFetch(`/support/${id}`);
@@ -1646,6 +1654,41 @@ export const listDirectoryContents = async (
   return response;
 };
 
+// ── FILE MANAGER: downloads & metadata ─────────────────────────
+
+export async function getFsFileMetadata(dir: string, name: string) {
+  return apiFetch(
+    `/admin/fs/metadata?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}`
+  );
+}
+
+/** Eliminar ficheiro órfão (disco apenas) */
+export async function deleteFsFileOrphan(dir: string, name: string) {
+  return apiFetch(
+    `/admin/fs/file?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}&mode=orphan`,
+    { method: 'DELETE' }
+  );
+}
+
+/** Download binário: devolve Blob (usar URL base da API) */
+export async function downloadFsFile(dir: string, name: string): Promise<Blob> {
+  // ⚠️ Ajusta esta linha ao que usas no projeto para obter a base da API:
+  //    - Se exportas API_BASE_URL, usa-a.
+  //    - Se apiFetch tem forma de devolver a base, reutiliza.
+  const apiBase =
+    (window as any).__API_BASE_URL__ ||
+    (typeof process !== 'undefined' ? (process as any).env.REACT_APP_API_BASE_URL : '') ||
+    ''; // último recurso: caminho relativo (pode falhar em ambientes separados)
+
+  const url = `${apiBase}/admin/fs/download?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}`;
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(t || 'Falha no download do ficheiro.');
+  }
+  return await res.blob();
+}
+
 
 // --- INTERFACES PARA O DATABASE CONSOLE ---
 export interface DbQueryResult {
@@ -1662,3 +1705,19 @@ export const executeSqlQuery = async (sql: string): Promise<DbQueryResult> => {
 export const fetchTableList = async (): Promise<TableListResponse> => {
     return apiFetch('/admin/db/tables');
 };
+
+
+// --- Platform Settings (singleton) ---
+export async function getPlatformSettings(): Promise<{ defaultEmailSignatureHtml: string | null }> {
+  return apiFetch('/platform-settings'); // GET
+}
+
+export async function updatePlatformSettings(payload: {
+  defaultEmailSignatureHtml: string | null;
+}): Promise<{ ok: true }> {
+  return apiFetch('/platform-settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
