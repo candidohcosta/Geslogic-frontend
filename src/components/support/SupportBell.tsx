@@ -45,7 +45,7 @@ const SupportBell: React.FC = () => {
     const { socket: s, joinList, leaveList, on } = createSupportChannel();
     socketRef.current = s;
 
-    // ⬅️ CORREÇÃO CRÍTICA: se já está ligado, fazer joinList já
+    // join imediato se já estiver ligado
     const doJoin = async () => {
       try { joinList(); } catch {}
       try {
@@ -102,10 +102,20 @@ const SupportBell: React.FC = () => {
     <Link
       to="/support"
       onClick={handleClick}
-      className="relative p-2 rounded-md hover:bg-gray-100 text-gray-600 transition-colors"
       title="Apoio ao Cliente"
+      aria-label="Apoio ao Cliente"
+      className={[
+        'relative p-2 rounded-md transition-colors',
+        // Hover var-based (usa as variáveis do Header) + fallback claro
+        'hover:bg-gray-100 hover:bg-[var(--hdr-btn-hover-bg)] hover:text-[var(--hdr-btn-hover-text)]',
+        // Acessibilidade
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60',
+      ].join(' ')}
     >
-      <LifeBuoy className={`h-6 w-6 ${hasAttention ? 'text-red-500 animate-pulse' : 'text-gray-600'}`} />
+      {/* Ícone sem cor base -> herda currentColor do header;
+          quando há atenção, força vermelho e animação (sobrepõe a herança) */}
+      <LifeBuoy className={['h-6 w-6', hasAttention ? 'text-red-500 animate-pulse' : ''].join(' ')} />
+
       {hasAttention && (
         <span className="absolute top-1 right-1 flex h-3 w-3">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />

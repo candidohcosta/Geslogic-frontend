@@ -21,10 +21,13 @@ interface SidebarLinkProps {
   forceShowLabel?: boolean;
   /** Em mobile, permite fechar drawer depois da navegação */
   onNavigate?: () => void;
+
+  // NOVO (Opção A — seguro, sem regressões)
+  styleVariant?: 'classic' | 'modern' | 'glass' | 'compact' | 'custom';
 }
 
-const OPEN_DELAY_MS = 180;  // ⇦ atraso de abertura do tooltip
-const CLOSE_DELAY_MS = 100; // ⇦ atraso de fecho (rápido para não piscar)
+const OPEN_DELAY_MS = 180;  // atraso de abertura do tooltip
+const CLOSE_DELAY_MS = 100; // atraso de fecho
 
 const SidebarLink: React.FC<SidebarLinkProps> = ({
   to,
@@ -34,6 +37,8 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
   collapsed,
   forceShowLabel,
   onNavigate,
+  // default seguro: mantém tudo como tens atualmente
+  styleVariant = 'classic',
 }) => {
   const isDesktop = !forceShowLabel; // coerente com Sidebar/SidebarGroup
   const showLabelInline = forceShowLabel || !collapsed;
@@ -114,6 +119,60 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
     <span aria-hidden className="w-2.5 h-2.5 rounded-full bg-gray-500/70 block" />
   );
 
+  // ============================================================
+  //      VARIANT ADDITIVE STYLES (OPÇÃO A — 100% seguro)
+  // ============================================================
+  const expanded = isDesktop && !collapsed;
+
+  // Paleta base/active por variante (mantém comportamento antigo intacto)
+  const baseClass = expanded
+    ? styleVariant === 'modern'
+      ? 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+      : styleVariant === 'glass'
+      ? 'text-gray-200 hover:bg-white/10 hover:text-white'
+      : styleVariant === 'compact'
+      ? 'text-gray-300 hover:bg-gray-800 hover:text-white text-[0.9375rem] py-1.5'
+      : styleVariant === 'custom'
+      ? 'text-gray-300 hover:bg-gray-800 hover:text-white' // será sobreposto pelas CSS vars abaixo
+      : 'text-gray-300 hover:bg-gray-800 hover:text-white' // classic
+    : 'text-gray-300 hover:bg-gray-800 hover:text-white';
+
+  const activeClass = expanded
+    ? styleVariant === 'modern'
+      ? 'bg-gray-900 text-white'
+      : styleVariant === 'glass'
+      ? 'bg-white/15 text-white'
+      : styleVariant === 'compact'
+      ? 'bg-gray-800 text-white'
+      : styleVariant === 'custom'
+      ? 'bg-gray-800 text-white' // será sobreposto pelas CSS vars abaixo
+      : 'bg-gray-800 text-white'
+    : 'bg-gray-800 text-white';
+
+  const textClass = active ? activeClass : baseClass;
+
+  // === NOVO: classes aditivas quando styleVariant === 'custom' (apenas expandido) ===
+  // Usa CSS variables aplicadas no <nav> pela Sidebar (--sb-*)
+  const customClasses =
+    styleVariant === 'custom' && expanded
+      ? [
+          'text-[var(--sb-text)]',
+          'hover:bg-[var(--sb-hover-bg)]',
+          'hover:text-[var(--sb-hover-text)]',
+          // estado active com data attribute neste próprio link
+          'data-[active=true]:bg-[var(--sb-active-bg)]',
+          'data-[active=true]:text-[var(--sb-active-text)]',
+        ].join(' ')
+      : '';
+
+  // Ícone: mantém lógica original e acrescenta var-based quando custom expandido
+  const iconExtraClasses =
+    styleVariant === 'custom' && expanded
+      ? (active
+          ? 'text-[var(--sb-active-text)]'
+          : 'text-[var(--sb-text)] group-hover:text-[var(--sb-hover-text)]')
+      : '';
+
   return (
     <>
       <Link
@@ -122,16 +181,16 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
         className={[
           'group relative min-w-0',
           'flex items-center gap-3 w-full text-left py-2 px-3 rounded-md text-sm transition-colors',
-          active
-            ? 'bg-gray-800 text-white font-semibold'
-            : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+          textClass,
+          customClasses, // <— aplica var-based (não remove classes antigas)
           collapsed && !forceShowLabel ? 'md:justify-center' : 'md:justify-start',
-          // melhor hit-area
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-0',
         ].join(' ')}
+        // data attribute para permitir seletores data-[active=true] nas classes acima
+        data-active={active ? 'true' : 'false'}
         onClick={(e) => {
-          e.stopPropagation(); // evita overlay fechar antes
-          onNavigate?.();      // mobile: fecha drawer (se aplicável)
+          e.stopPropagation();
+          onNavigate?.();
         }}
         onMouseEnter={() => {
           if (isDesktop && collapsed) scheduleOpen();
@@ -151,7 +210,16 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
             <Icon
               className={[
                 'w-5 h-5',
-                active ? 'text-white' : 'text-gray-400 group-hover:text-white',
+                active
+                  ? 'text-white'
+                  : expanded
+                  ? styleVariant === 'modern'
+                    ? 'text-gray-500 group-hover:text-gray-900'
+                    : styleVariant === 'glass'
+                    ? 'text-gray-200 group-hover:text-white'
+                    : 'text-gray-400 group-hover:text-white'
+                  : 'text-gray-400 group-hover:text-white',
+                iconExtraClasses, // <— var-based quando custom expandido
               ].join(' ')}
             />
           ) : (
@@ -165,8 +233,10 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
         </span>
       </Link>
 
-      {/* Tooltip via PORTAL — apenas desktop colapsado */}
-      {isDesktop && collapsed && tipOpen &&
+      {/* Tooltip via PORTAL — apenas desktop colapsado (inalterado) */}
+      {isDesktop &&
+        collapsed &&
+        tipOpen &&
         createPortal(
           <div
             className="fixed z-[100]"
@@ -176,7 +246,6 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
             }}
             onMouseLeave={() => scheduleClose(80)}
           >
-            {/* 🔽 Troca de estilo aqui (A ou B) */}
             <div
               className={[
                 prefersReducedMotion
@@ -185,26 +254,14 @@ const SidebarLink: React.FC<SidebarLinkProps> = ({
                 tipVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-[4px]',
               ].join(' ')}
             >
-              {/* === Opção A — Minimal premium (recomendado para dashboard) === */}
+              {/* Tooltip minimal original (mantido) */}
               <div className="px-2.5 py-1.5 text-xs rounded-md bg-gray-900 text-white shadow-lg ring-1 ring-black/25 whitespace-nowrap">
                 {children}
               </div>
-
-              
-              {/* // === Opção B — Brand accent (ativa trocando o bloco acima por este) === */}
-              {/* <div className="relative">
-                <div className="px-2.5 py-1.5 text-xs rounded-md bg-gray-900 text-white shadow-xl ring-1 ring-brand-500/35 whitespace-nowrap">
-                  {children}
-                </div> */}
-                {/* // Flecha opcional (pequena) */}
-                {/* <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-gray-900 ring-1 ring-brand-500/35" />
-              </div> */}
-              
             </div>
           </div>,
           document.body
-        )
-      }
+        )}
     </>
   );
 };

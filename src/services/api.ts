@@ -18,7 +18,7 @@ const BASE_URL = process.env.REACT_APP_API_BASE_URL;// || '/api';
 
  let refreshingPromise: Promise<any> | null = null;
 
-async function apiFetch(endpoint: string, options: RequestInit = {}) {
+export async function apiFetch(endpoint: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
@@ -164,6 +164,29 @@ export const logoutUser = () => {
     // Não precisa de body, a autenticação é feita pelo token no header
   });
 };
+
+// ROLES
+
+
+
+export async function getAllRoles(): Promise<any[]> {
+  const res = await apiFetch('/roles', { method: 'GET' });
+
+  // ✅ Contrato atual: array direto
+  if (Array.isArray(res)) {
+    return res;
+  }
+
+  // ✅ Fallback defensivo (caso algum endpoint antigo ainda exista)
+  if (res && typeof res === 'object' && 'roles' in res) {
+    return (res as any).roles;
+  }
+
+  console.error('Unexpected response from GET /roles:', res);
+  return [];
+}
+
+
 
 // USERS
 export const fetchUserProfile = () => apiFetch('/auth/profile');
@@ -1707,17 +1730,619 @@ export const fetchTableList = async (): Promise<TableListResponse> => {
 };
 
 
-// --- Platform Settings (singleton) ---
-export async function getPlatformSettings(): Promise<{ defaultEmailSignatureHtml: string | null }> {
-  return apiFetch('/platform-settings'); // GET
+// --- Platform Settings: Email Signature (nomes explícitos) ---
+export async function getPlatformEmailSignature(): Promise<{ defaultEmailSignatureHtml: string | null }> {
+  // contrato mantém-se: GET /platform-settings devolve a entidade
+  return apiFetch('/platform-settings/signature');
 }
 
-export async function updatePlatformSettings(payload: {
+export async function updatePlatformEmailSignature(payload: {
   defaultEmailSignatureHtml: string | null;
 }): Promise<{ ok: true }> {
-  return apiFetch('/platform-settings', {
+  // contrato mantém-se: PUT /platform-settings
+  return apiFetch('/platform-settings/signature', {
     method: 'PUT',
     body: JSON.stringify(payload),
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+// --- Platform Settings - MENUS ---
+export async function getPlatformMenus(): Promise<{ sidebar: any[] }> {
+  return apiFetch('/platform-settings/menus'); // GET
+}
+
+export async function updatePlatformMenus(payload: { sidebar: any[] }): Promise<{ sidebar: any[] }> {
+  return apiFetch('/platform-settings/menus', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+
+// --- Platform Settings - SIDEBAR CONFIG ---
+export type SidebarStyle = 'classic' | 'modern' | 'glass' | 'compact' | 'custom';
+export interface SidebarConfig {
+  style: SidebarStyle;
+  width?: number;
+  presetName?: string;
+}
+
+export async function getPlatformSidebarConfig(): Promise<SidebarConfig> {
+  return apiFetch('/platform-settings/sidebar-config'); // GET
+}
+
+export async function updatePlatformSidebarConfig(payload: SidebarConfig): Promise<SidebarConfig> {
+  return apiFetch('/platform-settings/sidebar-config', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+// --- Platform Settings - SIDEBAR THEME (cores) ---
+export interface SidebarTheme {
+  background: string;
+  itemText: string;
+  hoverBg: string;
+  hoverText: string;
+  activeBg: string;
+  activeText: string;
+  borderColor?: string;
+  backdropBlur?: 'none' | 'sm' | 'md' | 'lg';
+}
+
+export async function getPlatformSidebarTheme(): Promise<SidebarTheme> {
+  return apiFetch('/platform-settings/sidebar-theme');
+}
+
+export async function updatePlatformSidebarTheme(payload: Partial<SidebarTheme>): Promise<SidebarTheme> {
+  return apiFetch('/platform-settings/sidebar-theme', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+// --- Platform Settings - UI THEME (global) ---
+export interface UiTheme {
+  backgroundColor: string;
+  backgroundImageUrl: string | null;
+  backgroundRepeat: 'no-repeat' | 'repeat' | 'repeat-x' | 'repeat-y';
+  backgroundSize: 'cover' | 'contain' | 'auto';
+  backgroundPosition: 'center' | 'top' | 'bottom' | 'left' | 'right';
+  overlayColor: string;
+
+  headerBg: string;
+  headerText: string;
+  headerBorder: string;
+
+  footerBg: string;
+  footerText: string;
+  footerBorder: string;
+
+  headerBtnHoverBg?: string;
+  headerBtnHoverText?: string;
+  headerPanelBg?: string;
+  headerPanelText?: string;
+
+  presetName?: string;
+}
+
+export async function getPlatformUiTheme(): Promise<UiTheme> {
+  return apiFetch('/platform-settings/ui-theme'); // GET
+}
+
+export async function updatePlatformUiTheme(payload: Partial<UiTheme>): Promise<UiTheme> {
+  return apiFetch('/platform-settings/ui-theme', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+// --- SEGURANÇA (platform-settings/security) ---
+export type SecurityRole =
+  | 'PLATFORM_ADMIN'
+  | 'COMPANY_ADMIN'
+  | 'EVENT_STAFF'
+  | 'OPERATOR'
+  | 'USER'
+  | 'PARTICIPANT';
+
+export type SecurityRule = {
+  scope?: 'platform' | 'company';
+  requiredRoles?: string[];       // aceitamos strings livres (ex.: 'company:USER' no futuro)
+  requiredGrants?: string[];      // FeatureKey[]
+  requiredFeatures?: string[];    // se vieres a usar
+  requireSubscribedService?: 'EVENTS' | 'QUEUES' | 'SCHEDULING';
+  deny?: string[];
+};
+
+export type SecuritySettingsDto = {
+  version?: number;
+  defaults: { allowIfNotMatched: boolean };
+  roles?: Partial<Record<SecurityRole, { allowIfNotMatched?: boolean }>>;
+  frontend?: Record<string, SecurityRule>;
+  backend?: Record<string, SecurityRule>;
+  overrides?: Record<string, Partial<SecuritySettingsDto>>;
+  grantsMatrix?: Record<string, string[]>;
+};
+
+// =======================================================
+// UPDATE BACKEND RULES (replace total) — versão correta
+// =======================================================
+export async function updatePlatformSecurityBackendRules(backend: Record<string, any>) {
+  return apiFetch('/platform-settings/security/backend', {
+    method: 'PATCH',
+    body: JSON.stringify({ backend }),
+  });
+}
+
+export async function getPlatformSecuritySettings(): Promise<SecuritySettingsDto> {
+  return apiFetch('/platform-settings/security');
+}
+
+export async function updatePlatformSecuritySettings(dto: SecuritySettingsDto): Promise<SecuritySettingsDto> {
+  return apiFetch('/platform-settings/security', {
+    method: 'PATCH',
+    body: JSON.stringify(dto),
+  });
+}
+
+// --- Platform Settings - SECURITY CATALOG ---
+export type SecurityCatalogService = {
+  id: string;
+  name: string;
+  grants: string[];
+  frontendRoutes: string[];
+  backendEndpoints: string[];
+  conditions?: string[];
+};
+
+export type SecurityCatalogDto = { services: SecurityCatalogService[] };
+
+export async function getPlatformSecurityCatalog(): Promise<SecurityCatalogDto> {
+  return apiFetch('/platform-settings/security-catalog');
+}
+
+export async function updatePlatformSecurityCatalog(payload: SecurityCatalogDto): Promise<SecurityCatalogDto> {
+  return apiFetch('/platform-settings/security-catalog', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+// --- Platform Settings - SECURITY CATALOG (delete/bulk) ---
+export async function deletePlatformSecurityCatalogService(id: string, opts?: { force?: boolean }) {
+  const qs = opts?.force ? '?force=1' : '';
+  return apiFetch(`/platform-settings/security-catalog/${encodeURIComponent(id)}${qs}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function bulkDeletePlatformSecurityCatalog(ids: string[], force?: boolean) {
+  return apiFetch(`/platform-settings/security-catalog/bulk-delete`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ids, force: !!force }),
+  });
+}
+
+// --- Platform Settings - SECURITY IMPORT (authz -> JSON) ---
+export type AuthzImportDto = {
+  grantsByRole?: Partial<Record<
+    'PLATFORM_ADMIN' | 'COMPANY_ADMIN' | 'EVENT_STAFF' | 'OPERATOR' | 'USER' | 'PARTICIPANT',
+    string[]
+  >>;
+  frontend?: Record<string, any>;
+  backend?: Record<string, any>;
+};
+
+export async function importSecurityFromAuthz(payload: AuthzImportDto) {
+  return apiFetch('/platform-settings/security/import', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+
+// Tipos para o Scan/Diff/Apply
+export type CatalogScanArrayDiff = {
+  onlyCurrent: string[];
+  onlyProposed: string[];
+  common: string[];
+};
+export type CatalogServiceDiff = {
+  id: string;
+  name?: string;
+  grants: CatalogScanArrayDiff;
+  frontendRoutes: CatalogScanArrayDiff;
+  backendEndpoints: CatalogScanArrayDiff;
+};
+export type CatalogScanSummary = {
+  services: { added: number; removed: number; changed: number; totalScanned: number; totalCurrent: number };
+  grants: { added: number; removed: number };
+  frontend: { added: number; removed: number };
+  backend: { added: number; removed: number };
+};
+export type CatalogScanResponse = {
+  ok: boolean;
+  mode: 'dry' | 'merge' | 'replace';
+  scannedAt: string;
+  includeFrontend: boolean;
+  includeLegacy: boolean;
+  summary: CatalogScanSummary;
+  added: { services: string[]; grants: string[]; frontendRoutes: string[]; backendEndpoints: string[] };
+  removed: { services: string[]; grants: string[]; frontendRoutes: string[]; backendEndpoints: string[] };
+  changed: CatalogServiceDiff[];
+  applied: null | { services: number };
+};
+
+export type CatalogDiffResponse = {
+  ok: boolean;
+  diff?: {
+    mode: 'dry' | 'merge' | 'replace';
+    scannedAt: string;
+    summary: CatalogScanSummary;
+    added: CatalogScanResponse['added'];
+    removed: CatalogScanResponse['removed'];
+    changed: CatalogServiceDiff[];
+  };
+  message?: string;
+};
+
+export type CatalogApplyResponse = {
+  ok: boolean;
+  mode: 'merge' | 'replace';
+  applied: { services: number };
+};
+
+// Endpoints do scan/diff/apply
+export async function scanSecurityCatalog(opts: {
+  mode: 'dry' | 'merge' | 'replace';
+  includeFrontend?: boolean;
+  includeLegacy?: boolean;
+}): Promise<CatalogScanResponse> {
+  const sp = new URLSearchParams();
+  if (opts.mode) sp.set('mode', opts.mode);
+  if (opts.includeFrontend != null) sp.set('includeFrontend', opts.includeFrontend ? '1' : '0');
+  if (opts.includeLegacy != null) sp.set('includeLegacy', opts.includeLegacy ? '1' : '0');
+
+  return apiFetch(`/platform-settings/security-catalog/scan?${sp.toString()}`, {
+    method: 'POST',
+  });
+}
+
+export async function getSecurityCatalogDiff(): Promise<CatalogDiffResponse> {
+  return apiFetch(`/platform-settings/security-catalog/diff`);
+}
+
+export async function applySecurityCatalogScan(mode: 'merge' | 'replace'): Promise<CatalogApplyResponse> {
+  const sp = new URLSearchParams();
+  sp.set('mode', mode);
+  return apiFetch(`/platform-settings/security-catalog/apply?${sp.toString()}`, {
+    method: 'POST',
+  });
+}
+
+// --- Tipos do relatório (alinhados com o backend) ---
+export type SecurityCoverageReport = {
+  generatedAt: string;
+  source: any;
+  totals: {
+    services: number;
+    backend?: { endpoints: number; covered: number; uncovered: number; coveragePct: number };
+    frontend?: { routes: number; covered: number; uncovered: number; coveragePct: number };
+    grants: { defined: number; used: number; unused: number };
+  };
+  byService: Array<{
+    service: string;
+    backend?: { endpoints: number; covered: number; uncovered: number; coveragePct: number; uncoveredList: string[] };
+    frontend?: { routes: number; covered: number; uncovered: number; coveragePct: number; uncoveredList: string[] };
+    grants: { used: string[]; unused: string[] };
+    scopeRules: { declaredScope: 'platform' | 'company' | null; conflicts: string[] };
+  }>;
+  catalogHealth: {
+    invalidRules: any[];
+    unknownEndpointsInRules?: string[];
+    unknownRoutesInRules?: string[];
+    duplicates: { key: string; count: number }[];
+  };
+  recommendations: Array<{ type: string; where: string; service: string; item: string }>;
+};
+
+// --- Nova função usando o MESMO helper (apiFetch) ---
+export async function getSecurityCoverageReport(params?: {
+  scope?: 'all' | 'backend' | 'frontend';
+  service?: string;
+}): Promise<SecurityCoverageReport> {
+  const sp = new URLSearchParams();
+  if (params?.scope) sp.set('scope', params.scope);
+  if (params?.service) sp.set('service', params.service);
+
+  // Usa SEMPRE apiFetch (respeita BASE_URL + cookies + refresh 401)
+  return apiFetch(`/platform-settings/security-coverage/report?${sp.toString()}`);
+}
+
+// ========== Service Registry API ==========
+
+export type ServiceRegistryItem = {
+  id: string;
+  name: string;
+  globs: string[];
+  routePrefixes: string[];
+  grantPrefixes: string[];
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ServiceRegistryUpsert = {
+  id: string;
+  name: string;
+  globs: string[];
+  routePrefixes?: string[];
+  grantPrefixes?: string[];
+  active?: boolean;
+};
+
+export type ServiceRegistryPatch = {
+  name?: string;
+  globs?: string[];
+  routePrefixes?: string[];
+  grantPrefixes?: string[];
+  active?: boolean;
+};
+
+export async function getServicesRegistry(): Promise<ServiceRegistryItem[]> {
+  return apiFetch('/platform-settings/services-registry');
+}
+
+export async function upsertServiceRegistry(item: ServiceRegistryUpsert): Promise<ServiceRegistryItem> {
+  return apiFetch('/platform-settings/services-registry', {
+    method: 'POST',
+    body: JSON.stringify(item),
+  });
+}
+
+export async function patchServiceRegistry(id: string, patch: ServiceRegistryPatch): Promise<ServiceRegistryItem> {
+  return apiFetch(`/platform-settings/services-registry/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteServiceRegistry(id: string): Promise<{ removed: boolean; reasons?: string[] }> {
+  return apiFetch(`/platform-settings/services-registry/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Opcional — força a escrita do JSON para o scanner (útil em CI/CD) */
+export async function exportServicesRegistryConfig(): Promise<{ ok: boolean; path?: string; count?: number }> {
+  return apiFetch('/platform-settings/services-registry/export-config', { method: 'POST' });
+}
+
+export type DetectFrontendPrefixesResponse = {
+  ok: boolean;
+  serviceId: string | null;
+  totalFilesParsed: number;
+  totalRoutesFound: number;
+  suggestedPrefixes: string[];
+  pathsFound: string[];
+};
+
+export async function detectFrontendPrefixes(serviceId?: string): Promise<DetectFrontendPrefixesResponse> {
+  return apiFetch('/platform-settings/services-registry/detect-frontend-prefixes', {
+    method: 'POST',
+    body: JSON.stringify({ serviceId }),
+  });
+}
+
+// ===== Export/Backup =====
+export async function exportSecurityBackup(): Promise<void> {
+  // Usa o mesmo BASE_URL que o apiFetch usa (o teu apiFetch faz `${BASE_URL}${endpoint}`)
+  // Se não tens exportado o BASE_URL aqui, podes:
+  // 1) duplicar a leitura do env, ou
+  // 2) chamar apiFetchRaw/uma variante que não tenta JSON.
+  //
+  // Vamos usar fetch direto com a mesma base porque precisamos de Blob:
+  const res = await fetch(`${BASE_URL}/platform-settings/security/export`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  // Se falhar, tenta ler JSON para dar a mensagem correta (403, etc.)
+  if (!res.ok) {
+    let message = `Falha no download: ${res.status}`;
+    try {
+      const maybeJson = await res.json();
+      message = maybeJson?.message || message;
+    } catch {
+      // pode ser HTML → fica a mensagem padrão
+    }
+    throw new Error(message);
+  }
+
+  // filename (se vier no header) senão default
+  const disp = res.headers.get('content-disposition') || '';
+  const match = /filename="([^"]+)"/i.exec(disp);
+  const filename = match?.[1] ?? 'security-backup.json';
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+
+  // limpeza
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, 0);
+}
+
+export type AuditItem = { id: number; section: string; action: string; actor: string|null; changedAt: string };
+
+// ===== Auditoria (listar) =====
+export async function listSecurityAudit(section: 'security'|'security_catalog'|'service_registry', limit = 50) {
+  return apiFetch(`/platform-settings/security/audit?section=${section}&limit=${limit}`);
+}
+
+// ===== UNDO (secção) =====
+export async function previewUndoSection(section: 'security'|'security_catalog'|'service_registry', auditId?: number) {
+  return apiFetch('/platform-settings/security/undo-section/preview', {
+    method: 'POST',
+    body: JSON.stringify({ section, auditId }),
+  });
+}
+export async function undoSection(section: 'security'|'security_catalog'|'service_registry', auditId?: number) {
+  return apiFetch('/platform-settings/security/undo-section', {
+    method: 'POST',
+    body: JSON.stringify({ section, auditId }),
+  });
+}
+
+// ===== RESTORE (secção) =====
+export async function previewRestoreSection(section: 'security'|'security_catalog'|'service_registry', auditId: number, which: 'before'|'after' = 'after') {
+  return apiFetch('/platform-settings/security/restore-section/preview', {
+    method: 'POST',
+    body: JSON.stringify({ section, auditId, which }),
+  });
+}
+export async function restoreSection(section: 'security'|'security_catalog'|'service_registry', auditId: number, which: 'before'|'after' = 'after') {
+  return apiFetch('/platform-settings/security/restore-section', {
+    method: 'POST',
+    body: JSON.stringify({ section, auditId, which }),
+  });
+}
+
+// ===== UNDO/RESTORE (bundle) =====
+export async function previewUndoBundle(auditIds?: { security?: number; catalog?: number; registry?: number }) {
+  return apiFetch('/platform-settings/security/undo-bundle/preview', {
+    method: 'POST',
+    body: JSON.stringify({ auditIds }),
+  });
+}
+export async function undoBundle(auditIds?: { security?: number; catalog?: number; registry?: number }) {
+  return apiFetch('/platform-settings/security/undo-bundle', {
+    method: 'POST',
+    body: JSON.stringify({ auditIds }),
+  });
+}
+
+export async function previewRestoreBundle(auditIds?: { security?: number; catalog?: number; registry?: number }, which: 'before'|'after' = 'after') {
+  return apiFetch('/platform-settings/security/restore-bundle/preview', {
+    method: 'POST',
+    body: JSON.stringify({ auditIds, which }),
+  });
+}
+export async function restoreBundle(auditIds?: { security?: number; catalog?: number; registry?: number }, which: 'before'|'after' = 'after') {
+  return apiFetch('/platform-settings/security/restore-bundle', {
+    method: 'POST',
+    body: JSON.stringify({ auditIds, which }),
+  });
+}
+
+
+/** =========================================================
+ * Plataforma — Defaults (companyDefaults)
+ * =======================================================*/
+
+/** Lê os defaults globais de company */
+export async function getCompanyDefaults(): Promise<Record<string, any>> {
+  const res = await apiFetch('/platform-settings/company-defaults', { method: 'GET' });
+  // backend responde { companyDefaults: {...} }
+  return (res && (res as any).companyDefaults) || {};
+}
+
+/** Substitui/merge (no BE) os defaults globais de company */
+export async function putCompanyDefaults(payload: Record<string, any>): Promise<Record<string, any>> {
+  const res = await apiFetch('/platform-settings/company-defaults', {
+    method: 'PUT',
+    body: JSON.stringify({ companyDefaults: payload }),
+  });
+  return (res && (res as any).companyDefaults) || {};
+}
+
+/** =========================================================
+ * Plataforma — Catálogo de Opções (companyOptions)
+ * =======================================================*/
+
+/** Lê as opções globais (listas de escolha) para settings de company */
+export async function getCompanyOptions(): Promise<Record<string, any>> {
+  const res = await apiFetch('/platform-settings/company-options', { method: 'GET' });
+  // backend responde { companyOptions: {...} }
+  return (res && (res as any).companyOptions) || {};
+}
+
+/** Substitui/merge (no BE) o catálogo de opções globais */
+export async function putCompanyOptions(payload: Record<string, any>): Promise<Record<string, any>> {
+  const res = await apiFetch('/platform-settings/company-options', {
+    method: 'PUT',
+    body: JSON.stringify({ companyOptions: payload }),
+  });
+  return (res && (res as any).companyOptions) || {};
+}
+
+/** =========================================================
+ * Empresa — Settings efetivos (Company.settings)
+ * =======================================================*/
+
+/**
+ * Lê os settings efetivos de uma empresa.
+ * Requer que exista o endpoint GET /companies/:companyId/settings
+ * (Se ainda não existir, diz-me se preferes que, temporariamente, eu chame /companies/:companyId e leia .settings)
+ */
+export async function getCompanySettings(companyId: string): Promise<Record<string, any>> {
+  const res = await apiFetch(`/companies/${encodeURIComponent(companyId)}/settings`, { method: 'GET' });
+  // backend responde { settings: {...} } ou devolve diretamente o objeto; tratamos ambos
+  return (res && ((res as any).settings ?? res)) || {};
+}
+
+/**
+ * Faz patch (merge no BE) dos settings da empresa.
+ * Validação de valores deve ser feita no BE em função do companyOptions.
+ */
+export async function patchCompanySettings(
+  companyId: string,
+  patch: Record<string, any>
+): Promise<Record<string, any>> {
+  const res = await apiFetch(`/companies/${encodeURIComponent(companyId)}/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  return (res && ((res as any).settings ?? res)) || {};
+}
+
+/** =========================================================
+ * Empresa — Aplicar defaults globais (deep-merge não destrutivo)
+ * =======================================================*/
+
+/**
+ * Aplica (merge) os companyDefaults globais à empresa.
+ * Endpoint: POST /companies/:companyId/settings/apply-defaults
+ */
+export async function applyDefaultsToCompany(companyId: string): Promise<Record<string, any>> {
+  const res = await apiPost(`/companies/${encodeURIComponent(companyId)}/settings/apply-defaults`, {});
+  return (res && ((res as any).settings ?? res)) || {};
+}
+
+
+export async function fetchPlatformUsers() {
+  return await apiFetch('/users/by-role-type/PLATFORM_USER');
+}
+
+
+export async function fetchUserRoleAssignments(userId: string) {
+  const res = await apiFetch(`/role-assignments?userId=${userId}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error('Falha ao obter roles do utilizador');
+  return res.json();
 }

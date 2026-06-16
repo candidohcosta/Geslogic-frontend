@@ -32,40 +32,38 @@ type IconType = React.ComponentType<SVGProps<SVGSVGElement>>;
 interface DrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Título em texto simples; podes também passar JSX se quiseres */
-  title: React.ReactNode;
-  /** Ícone opcional a aparecer à esquerda do título */
+
+  /** Header padrão (legacy) */
+  title?: React.ReactNode;
   titleIcon?: IconType;
-  /** Subtítulo/descrição breve */
   subtitle?: React.ReactNode;
-  /** Cor/“tom” do header (apenas título e barra superior) */
+  headerActions?: React.ReactNode;
+
+  /** ✅ NOVO: header totalmente custom */
+  customHeader?: React.ReactNode;
+
   tone?: DrawerTone;
   size?: DrawerSize;
+
   children: React.ReactNode;
-  /** Botões/ações no footer (à direita) */
+
   footer?: React.ReactNode;
-  /** Quando true, faz o footer “colar” ao fundo com sombra */
   stickyFooter?: boolean;
   className?: string;
-  /** Elemento a receber o foco inicial dentro do drawer */
   initialFocusRef?: React.RefObject<HTMLElement | null>;
-  /** Ações no topo à direita (ex.: ajuda, info, etc.) */
-  headerActions?: React.ReactNode;
 }
 
-/**
- * Drawer acessível (side panel)
- * - Foco inicial restaurado
- * - Fecha com Esc e overlay
- * - Barra superior com “tone”
- * - Ícone no título, header actions, sticky footer opcional
- */
 export function Drawer({
   isOpen,
   onClose,
+
   title,
   titleIcon: TitleIcon,
   subtitle,
+  headerActions,
+
+  customHeader, // ✅ novo
+
   tone = 'brand',
   size = 'md',
   children,
@@ -73,31 +71,32 @@ export function Drawer({
   stickyFooter = true,
   className,
   initialFocusRef,
-  headerActions,
 }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const lastActiveRef = useRef<HTMLElement | null>(null);
 
-  // Guardar/restaurar foco + bloquear scroll
+  // Focus + scroll lock
   useEffect(() => {
     if (isOpen) {
       lastActiveRef.current = document.activeElement as HTMLElement;
+      document.body.style.overflow = 'hidden';
+
       const el =
-        (initialFocusRef?.current as HTMLElement | null) ||
+        initialFocusRef?.current ||
         (panelRef.current?.querySelector('[data-autofocus]') as HTMLElement | null);
 
       el?.focus?.();
-      document.body.style.overflow = 'hidden';
     } else {
       lastActiveRef.current?.focus?.();
       document.body.style.overflow = '';
     }
+
     return () => {
       document.body.style.overflow = '';
     };
   }, [isOpen, initialFocusRef]);
 
-  // Esc fecha
+  // ESC fecha
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -109,11 +108,6 @@ export function Drawer({
 
   if (!isOpen) return null;
 
-  const headerTitleClass = cn(
-    'text-lg font-semibold',
-    toneToTitle[tone] ?? 'text-gray-900'
-  );
-
   return (
     <div
       className="fixed inset-0 z-[60]"
@@ -122,46 +116,60 @@ export function Drawer({
       aria-labelledby="drawer-title"
     >
       {/* Overlay */}
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/60"
+        onClick={onClose}
+      />
 
       {/* Painel */}
       <div
+        ref={panelRef}
         className={cn(
           'absolute right-0 top-0 h-full bg-white shadow-2xl border-l border-gray-200',
-          'flex flex-col',
+          'flex flex-col animate-in slide-in-from-right duration-200',
           sizeToWidth[size],
-          'animate-in slide-in-from-right duration-200',
           className
         )}
-        ref={panelRef}
       >
-        {/* Header com brand accent (tom configurável) */}
+        {/* HEADER */}
         <div className="border-b border-gray-200">
           <div className={cn('border-t-2', toneToTopBorder[tone])} />
-          <div className="px-5 py-4 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                {TitleIcon && (
-                  <span className="inline-flex w-5 h-5 text-brand-600">
-                    <TitleIcon className="w-5 h-5" />
-                  </span>
+
+          {customHeader ? (
+            <div className="px-5 py-4">
+              {customHeader}
+            </div>
+          ) : (
+            <div className="px-5 py-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {TitleIcon && (
+                    <span className="inline-flex w-5 h-5 text-brand-600">
+                      <TitleIcon className="w-5 h-5" />
+                    </span>
+                  )}
+                  <h2
+                    id="drawer-title"
+                    className={cn('text-lg font-semibold', toneToTitle[tone])}
+                  >
+                    {title}
+                  </h2>
+                </div>
+
+                {subtitle && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    {subtitle}
+                  </p>
                 )}
-                <h2 id="drawer-title" className={headerTitleClass}>
-                  {title}
-                </h2>
               </div>
-              {subtitle && (
-                <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
+
+              {headerActions && (
+                <div className="flex items-center gap-2 shrink-0">
+                  {headerActions}
+                </div>
               )}
             </div>
-
-            {/* Ações opcionais (ex.: Ajuda, Info) */}
-            {headerActions && (
-              <div className="flex items-center gap-2 shrink-0">
-                {headerActions}
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Conteúdo */}
@@ -174,16 +182,17 @@ export function Drawer({
           <div
             className={cn(
               'border-t border-gray-200 px-5 py-3',
-              stickyFooter && 'sticky bottom-0 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75 shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.15)]'
+              stickyFooter &&
+                'sticky bottom-0 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75 shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.15)]'
             )}
           >
-            <div className="flex justify-end gap-2">{footer}</div>
+            <div className="flex justify-end gap-2">
+              {footer}
+            </div>
           </div>
         )}
-      </div>
+        </div>
     </div>
   );
 }
-
-/** Garante módulo válido em --isolatedModules mesmo em builds estritos */
-export {};
+export{};

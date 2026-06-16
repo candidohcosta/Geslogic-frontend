@@ -184,7 +184,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead }}>
       {children}
-      <Toaster position="bottom-right" toastOptions={{ duration: 5000 }} />
+
+      <Toaster
+        position="bottom-right"
+        toastOptions={{ duration: 5000 }}
+        containerStyle={{ zIndex: 2147483647 }}
+      />
+
     </NotificationContext.Provider>
   );
 };

@@ -1,5 +1,4 @@
 // src/components/sidebar/SidebarGroup.tsx
-
 import React, {
   Children,
   isValidElement,
@@ -31,6 +30,9 @@ interface SidebarGroupProps {
   /** Em mobile, fechar drawer ao clicar num filho (já usado nos Links) */
   onNavigateChild?: () => void;
   children: ReactNode;
+
+  // NOVO (Opção A — seguro, aditivo)
+  styleVariant?: 'classic' | 'modern' | 'glass' | 'compact' | 'custom';
 }
 
 const SidebarGroup: React.FC<SidebarGroupProps> = ({
@@ -45,6 +47,9 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
   hasChildren,
   onNavigateChild,
   children,
+
+  // default seguro — classic = comportamento atual
+  styleVariant = 'classic',
 }) => {
   const panelId = `${id}-panel`;
 
@@ -130,7 +135,6 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
   /**
    * Força labels visíveis nos submenus dentro do flyout.
    * Entra no <li> e injeta props no <SidebarLink /> (filho real).
-   * Faz narrowing para ReactElement<any> para aceder a props com segurança.
    */
   const forceLabelsDeep = (node: ReactNode): ReactNode => {
     if (!isValidElement(node)) return node;
@@ -156,6 +160,63 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
     const newKids = Children.map(el.props?.children, forceLabelsDeep);
     return cloneElement(el, el.props as any, newKids);
   };
+
+  // ============================================================
+  //      VARIANT ADDITIVE STYLES (OPÇÃO A — ZERO REGRESSÕES)
+  // ============================================================
+  const expanded = isDesktop && !collapsed;
+  const variant = styleVariant;
+
+  // Botão do grupo → fundo/cores (fallbacks por variante);
+  // No 'custom' aplicamos as CSS vars via classes *aditivas* abaixo.
+  const btnColor = expanded
+    ? (
+        active
+          ? (
+              variant === 'modern'
+                ? 'bg-gray-900 text-white'
+                : variant === 'glass'
+                ? 'bg-white/15 text-white'
+                : variant === 'compact'
+                ? 'bg-gray-800 text-white text-[0.9375rem] py-2'
+                : /* classic/custom fallback */ 'bg-gray-800 text-white'
+            )
+          : (
+              variant === 'modern'
+                ? 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                : variant === 'glass'
+                ? 'text-gray-200 hover:bg-white/10 hover:text-white'
+                : variant === 'compact'
+                ? 'text-gray-300 hover:bg-gray-800 hover:text-white text-[0.9375rem] py-2'
+                : /* classic/custom fallback */ 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            )
+      )
+    : (
+        active
+          ? 'bg-gray-800 text-white'
+          : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+      );
+
+  // === NOVO: classes aditivas quando styleVariant === 'custom' (apenas expandido) ===
+  // Usa CSS variables aplicadas no <nav> pela Sidebar (--sb-*)
+  const customBtnClasses =
+    variant === 'custom' && expanded
+      ? [
+          'text-[var(--sb-text)]',
+          'hover:bg-[var(--sb-hover-bg)]',
+          'hover:text-[var(--sb-hover-text)]',
+          'data-[active=true]:bg-[var(--sb-active-bg)]',
+          'data-[active=true]:text-[var(--sb-active-text)]',
+        ].join(' ')
+      : '';
+
+  // Ícone do grupo: mantém lógica original e acrescenta var-based quando custom expandido
+  const iconExtraClasses =
+    variant === 'custom' && expanded
+      ? (active
+          ? 'text-[var(--sb-active-text)]'
+          : 'text-[var(--sb-text)] group-hover/button:text-[var(--sb-hover-text)]')
+      : '';
 
   return (
     <li className="group relative min-w-0">
@@ -191,14 +252,33 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
         className={[
           'group/button relative',
           'w-full flex items-center justify-between text-left py-2 px-3 rounded-md text-sm font-medium transition-colors',
-          active || isOpen ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+          btnColor,
+          customBtnClasses, // <— aplica var-based (não remove classes antigas)
           (collapsed && !forceShowLabel) ? 'md:justify-center' : 'md:justify-between',
         ].join(' ')}
         aria-controls={panelId}
         aria-expanded={shouldUseFlyout ? flyoutOpen : isOpen}
+        // data attribute para permitir seletores data-[active=true]
+        data-active={active ? 'true' : 'false'}
       >
         <div className={['flex items-center gap-3', (collapsed && !forceShowLabel) ? 'md:justify-center' : ''].join(' ')}>
-          <Icon className={['w-5 h-5', active || isOpen ? 'text-white' : 'text-gray-400 group-hover:text-white'].join(' ')} />
+          <Icon
+            className={[
+              'w-5 h-5',
+              active
+                ? 'text-white'
+                : expanded
+                ? (
+                    variant === 'modern'
+                      ? 'text-gray-500 group-hover/button:text-gray-900'
+                      : variant === 'glass'
+                      ? 'text-gray-200 group-hover/button:text-white'
+                      : 'text-gray-400 group-hover/button:text-white'
+                  )
+                : 'text-gray-400 group-hover/button:text-white',
+              iconExtraClasses, // <— var-based quando custom expandido
+            ].join(' ')}
+          />
           {/* Em mobile (forceShowLabel), a label aparece sempre */}
           <span className={forceShowLabel ? 'inline' : (collapsed ? 'hidden md:sr-only' : 'inline')}>
             {title}
@@ -252,7 +332,15 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
       {!shouldUseFlyout && isOpen && (
         <ul
           id={panelId}
-          className={['mt-2 space-y-1', (collapsed && !forceShowLabel) ? 'ml-0 pl-0' : 'ml-4 border-l border-gray-700 pl-3'].join(' ')}
+          className={[
+            'mt-2 space-y-1',
+            (collapsed && !forceShowLabel) ? 'ml-0 pl-0'
+              : variant === 'modern'
+                ? 'ml-4 border-l border-gray-200 pl-3'
+                : variant === 'custom'
+                  ? 'ml-4 border-l border-[var(--sb-border)] pl-3'
+                  : 'ml-4 border-l border-gray-700 pl-3',
+          ].join(' ')}
           onClick={(e) => e.stopPropagation()}
         >
           {children}
@@ -270,12 +358,7 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Envelope com animação (opacity + translate-y 6px) */}
-            <div
-              className={[
-                'transform-gpu transition-all duration-150 ease-out',
-                flyoutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-[6px]',
-              ].join(' ')}
-            >
+            <div className={['transform-gpu transition-all duration-150 ease-out', flyoutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-[6px]'].join(' ')}>
               <div
                 className="rounded-lg border border-gray-800 bg-gray-900 shadow-2xl ring-1 ring-black/30 w-64"
                 role="dialog"
@@ -289,15 +372,9 @@ const SidebarGroup: React.FC<SidebarGroupProps> = ({
                 </div>
 
                 {/* Conteúdo com overflow só se precisar */}
-                <div
-                  className="overflow-y-auto overscroll-contain"
-                  style={{ maxHeight: flyoutPos.maxHeight }}
-                >
+                <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: flyoutPos.maxHeight }}>
                   <ul className="p-2 space-y-1">
-                    {
-                      // Força labels visíveis nos SidebarLink, mesmo se embrulhados em <li>
-                      Children.map(children, (child) => forceLabelsDeep(child))
-                    }
+                    {Children.map(children, (child) => forceLabelsDeep(child))}
                   </ul>
                 </div>
               </div>

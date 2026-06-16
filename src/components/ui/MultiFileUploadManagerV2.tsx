@@ -6,7 +6,7 @@ import { FilePurpose } from '../../types/file';
 import { Button } from './Button';
 import { Label } from './Label';
 import { Input } from './Input';
-import { Loader2, UploadCloud, Trash2, File as FileIcon, CheckSquare, Image as ImageIcon } from 'lucide-react';
+import { Loader2, UploadCloud, Trash2, File as FileIcon, CheckSquare, Image as ImageIcon, Download } from 'lucide-react';
 
 interface ExistingFile {
   id: string;
@@ -25,9 +25,29 @@ interface MultiFileUploadManagerV2Props {
   showThumbnails?: boolean;
   /** Tamanho do thumbnail px (default: 96 => 6rem) */
   thumbnailSize?: number;
+
+  readOnly?: boolean;
 }
 
 const isImageUrl = (url: string) => /\.(png|jpe?g|gif|webp)$/i.test(url);
+
+const getFileIcon = (file: { mimeType?: string; url: string }) => {
+  const type = file.mimeType || file.url;
+
+  if (/pdf/i.test(type)) {
+    return <span className="text-red-500 text-xs font-semibold">PDF</span>;
+  }
+
+  if (/word|doc/i.test(type)) {
+    return <span className="text-blue-500 text-xs font-semibold">DOC</span>;
+  }
+
+  if (/excel|xls/i.test(type)) {
+    return <span className="text-green-500 text-xs font-semibold">XLS</span>;
+  }
+
+  return <FileIcon className="h-10 w-10 text-gray-400" />;
+};
 
 const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
   ownerType,
@@ -38,6 +58,7 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
   maxFiles = 99,
   showThumbnails = true,
   thumbnailSize = 96,
+  readOnly = false,
 }) => {
   const queryClient = useQueryClient();
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
@@ -106,6 +127,18 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
     }
   };
 
+
+const handleDownload = (url: string, filename: string) => {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.target = '_blank'; // fallback para abrir
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+
   // --- Drag & Drop ---
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
@@ -137,30 +170,35 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
   return (
     <div className="space-y-4">
       {/* Área de Upload (Drag-and-Drop) */}
-      <div
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-        className={`p-6 border-2 border-dashed rounded-lg text-center transition-colors duration-200 ${isDragging ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300 bg-gray-50'}`}
-      >
-        <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
-        <Label htmlFor="manager-upload-dnd" className="mt-2 block text-sm font-medium text-gray-900 cursor-pointer">
-          Arraste e largue ficheiros aqui, ou <span className="text-indigo-600">procure no seu computador</span>
-        </Label>
-        <input
-          id="manager-upload-dnd"
-          type="file"
-          multiple
-          onChange={(e) => handleFileSelect(e.target.files)}
-          className="sr-only"
-        />
-        <div className="mt-2 text-xs text-gray-500">
-          {existingFiles.length < maxFiles
-            ? `Pode carregar até ${Math.max(0, maxFiles - existingFiles.length)} ficheiro(s).`
-            : 'Atingiu o limite máximo de ficheiros.'}
+      {!readOnly && (
+        <div
+
+          onDragEnter={!readOnly ? handleDragEnter : undefined}
+          onDragLeave={!readOnly ? handleDragLeave : undefined}
+          onDragOver={!readOnly ? handleDragOver : undefined}
+          onDrop={!readOnly ? handleDrop : undefined}
+
+          className={`p-6 border-2 border-dashed rounded-lg text-center transition-colors duration-200 ${isDragging ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300 bg-gray-50'}`}
+        >
+          <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
+          <Label htmlFor="manager-upload-dnd" className="mt-2 block text-sm font-medium text-gray-900 cursor-pointer">
+            Arraste e largue ficheiros aqui, ou <span className="text-indigo-600">procure no seu computador</span>
+          </Label>
+          <input
+            id="manager-upload-dnd"
+            type="file"
+            multiple
+            onChange={(e) => handleFileSelect(e.target.files)}
+            className="sr-only"
+            disabled={readOnly}
+          />
+          <div className="mt-2 text-xs text-gray-500">
+            {existingFiles.length < maxFiles
+              ? `Pode carregar até ${Math.max(0, maxFiles - existingFiles.length)} ficheiro(s).`
+              : 'Atingiu o limite máximo de ficheiros.'}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Ficheiros pendentes (com preview local) */}
       {filesToUpload.length > 0 && (
@@ -186,7 +224,7 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
             ))}
           </div>
 
-          <Button onClick={handleUploadAll} disabled={isUploading || existingFiles.length >= maxFiles} className="w-full">
+          <Button onClick={handleUploadAll} disabled={readOnly || isUploading || existingFiles.length >= maxFiles} className="w-full">
             {isUploading ? <><Loader2 className="animate-spin mr-2 h-4 w-4" /> A Carregar...</> : `Carregar ${filesToUpload.length} Ficheiro(s)`}
           </Button>
         </div>
@@ -213,7 +251,8 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
                         loading="lazy"
                       />
                     ) : (
-                      <ImageIcon className="h-10 w-10 text-gray-400" />
+/*                       <ImageIcon className="h-10 w-10 text-gray-400" /> */
+                      getFileIcon(file)
                     )}
                   </div>
 
@@ -222,6 +261,7 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
                       value={displayNames[file.id] ?? file.displayName}
                       onChange={(e) => handleDisplayNameChange(file.id, e.target.value)}
                       className="w-full"
+                      disabled={readOnly}
                     />
                     <div className="flex gap-2 mt-2">
                       <Button
@@ -229,9 +269,23 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
                         size="icon"
                         onClick={() => handleSaveDisplayName(file.id)}
                         title="Guardar Nome"
-                        disabled={isUpdatingName || (displayNames[file.id] === undefined)}
+                        disabled={readOnly || isUpdatingName || (displayNames[file.id] === undefined)}
                       >
                         <CheckSquare className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          handleDownload(
+                            file.url,
+                            file.displayName ?? 'documento'
+                          )
+                        }
+                        title="Download"
+                      >
+                        <Download className="h-4 w-4" />
                       </Button>
 
                       <Button
@@ -239,10 +293,11 @@ const MultiFileUploadManagerV2: React.FC<MultiFileUploadManagerV2Props> = ({
                         size="icon"
                         onClick={() => handleDeleteExisting(file.id)}
                         title="Apagar Ficheiro"
-                        disabled={isDeleting}
+                        disabled={readOnly || isDeleting}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
+
                     </div>
                   </div>
                 </div>

@@ -1,10 +1,9 @@
 // frontend/src/App.tsx
-
 import React, { useState, useEffect } from 'react';
 import {
   Routes, Route, Navigate, useLocation, useNavigate, BrowserRouter
 } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserRole } from './types/user';
 import { SubdomainProvider, useSubdomain } from './context/SubdomainContext';
@@ -119,6 +118,25 @@ import { InfoModalPortal } from './components/system/InfoDialogPortal';
 import { ConfirmModalPortal } from './components/system/ConfirmModalPortal';
 import PlatformEmailSignaturePage from './pages/PlatformEmailSignaturePage';
 import PlatformSettingsPage from './pages/platform/PlatformSettingsPage';
+import { getPlatformUiTheme, getPlatformSidebarConfig } from './services/api';
+
+import PlatformUsersListPage from './pages/PlatformUsersListPage';
+import RolesListPage from './pages/RolesListPage';
+import ScopedUsersListPage from './pages/ScopedUsersListPage';
+import InboxPage from './features/correspondence/pages/InboxPage';
+import DocumentDetailPage from './features/correspondence/pages/DocumentDetailPage';
+import OutboundDetailPage from './features/correspondence/pages/OutboundDetailPage';
+import CreateOutboundPage from './features/correspondence/pages/CreateOutboundPage';
+
+import RegisterInboundPage from './features/correspondence/pages/RegisterInboundPage';
+import RegisterInboundManualPage from './features/correspondence/pages/RegisterInboundManualPage';
+import RegisterInboundManualWizardPage from './features/correspondence/pages/RegisterInboundManualWizardPage';
+import InboxDecisionPage from './features/correspondence/pages/InboxDecisionPage';
+import OutboxPage from './features/correspondence/pages/OutboxPage';
+import ImportEmailPage from './features/correspondence/email-ingestion/pages/ImportEmailPage';
+
+import CasesListPage from './features/correspondence/cases/pages/CasesListPage';
+import CaseDetailPage from './features/correspondence/cases/pages/CaseDetailPage';
 
 const queryClient = new QueryClient();
 
@@ -137,19 +155,16 @@ function AppLayout() {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-
   // ─────────────────────────────────────────────────────────────
   // NOVO: ler o asPublic=1 da querystring (preview e página pública)
   const search = new URLSearchParams(location.search);
   const isAsPublic = search.get('asPublic') === '1';
   // ─────────────────────────────────────────────────────────────
 
-
   const isLanding =
     location.pathname === '/' &&           // é a rota da landing
     !isAuthenticated &&                    // utilizador não autenticado (é mesmo pública)
     !subdomain;
-
 
   // NOVO: estado controlado do colapso da sidebar (para re-layout do conteúdo)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -161,7 +176,37 @@ function AppLayout() {
     }
   });
 
-  // persistência simples
+  // Aparência Global (bg / imagem / overlay ...)
+  const { data: uiTheme } = useQuery({
+    queryKey: ['platform-settings', 'ui-theme'],
+    queryFn: getPlatformUiTheme,
+    staleTime: 30000,
+  });
+
+  // Sidebar Config (estilo + largura) — usado para gridTemplateColumns
+  const { data: sidebarCfg } = useQuery({
+    queryKey: ['platform-settings', 'sidebar-config'],
+    queryFn: getPlatformSidebarConfig,
+    staleTime: 30000,
+  });
+  const sidebarWidth = typeof sidebarCfg?.width === 'number' ? sidebarCfg.width : 256;
+  const COLLAPSED_RAIL_PX = 64;
+
+  // Compose background-image com overlay + imagem (se existir)
+  const appBackgroundImage =
+    uiTheme?.backgroundImageUrl
+      ? `linear-gradient(${uiTheme?.overlayColor ?? 'rgba(0,0,0,0)'}, ${uiTheme?.overlayColor ?? 'rgba(0,0,0,0)'}), url("${uiTheme.backgroundImageUrl}")`
+      : undefined;
+
+  const appStyle: React.CSSProperties = {
+    ...(uiTheme?.backgroundColor ? { backgroundColor: uiTheme.backgroundColor } : {}),
+    ...(appBackgroundImage ? { backgroundImage: appBackgroundImage } : {}),
+    ...(uiTheme?.backgroundRepeat ? { backgroundRepeat: uiTheme.backgroundRepeat } : {}),
+    ...(uiTheme?.backgroundSize ? { backgroundSize: uiTheme.backgroundSize } : {}),
+    ...(uiTheme?.backgroundPosition ? { backgroundPosition: uiTheme.backgroundPosition } : {}),
+  };
+
+  // persistência simples do estado colapsado
   React.useEffect(() => {
     try {
       localStorage.setItem('sidebar:collapsed', sidebarCollapsed ? '1' : '0');
@@ -198,13 +243,12 @@ function AppLayout() {
       navigate('/login', { replace: true });
     }
 
-  // Se autenticado na raiz e sem subdomínio, segue para o dashboard
-  if (!isLoading && isAuthenticated && location.pathname === '/' && !subdomain) {
-    navigate('/dashboard', { replace: true });
-  }
+    // Se autenticado na raiz e sem subdomínio, segue para o dashboard
+    if (!isLoading && isAuthenticated && location.pathname === '/' && !subdomain) {
+      navigate('/dashboard', { replace: true });
+    }
 
   }, [isLoading, isAuthenticated, navigate, location.pathname, subdomain]);
-
 
   // KIOSK / DISPLAY / Q --- (mantido)
   if (subdomain === 'kiosk') {
@@ -237,14 +281,16 @@ function AppLayout() {
 
   // NORMAL LAYOUT ---------------------------------------
 
-  // NOVO: colunas do grid reativas ao colapso
-  const contentGridCols = showSidebar
-    ? (sidebarCollapsed ? 'md:grid-cols-[64px_1fr]' : 'md:grid-cols-[256px_1fr]')
-    : 'md:grid-cols-1';
+  // NOVO: gridTemplateColumns dinâmico em desktop quando a sidebar está visível
+  const gridTemplateColumnsStyle: React.CSSProperties | undefined =
+    showSidebar
+      ? (sidebarCollapsed
+          ? { gridTemplateColumns: `${COLLAPSED_RAIL_PX}px 1fr` }
+          : { gridTemplateColumns: `${sidebarWidth}px 1fr` })
+      : undefined;
 
   return (
-    <div className="h-screen overflow-hidden bg-gray-100 flex flex-col font-sans">
-
+    <div className="h-screen overflow-hidden bg-gray-100 flex flex-col font-sans" style={appStyle}>
 
       {/* ➋ não renderizar o Header no modo público/preview */}
       {!isAsPublic && (
@@ -255,7 +301,9 @@ function AppLayout() {
       <div className={`${!isAsPublic ? 'pt-16' : ''} grid w-full h-full min-h-0 overflow-hidden`}>
 
         <div
-          className={`flex flex-col md:grid ${contentGridCols} h-full min-h-0`}
+          className="flex flex-col md:grid h-full min-h-0"
+          // Em mobile, este wrapper é flex; o gridTemplateColumns só tem efeito em md: (desktop)
+          style={gridTemplateColumnsStyle}
         >
 
           {showSidebar && (
@@ -283,173 +331,195 @@ function AppLayout() {
 
               <main className="px-4 pb-2 md:pb-3 pt-0 flex-grow">
 
-                  <Routes>
-                    {/* subdomain root */}
-                    {subdomain && <Route path="/" element={<PublicCompanyPage />} />}
+                <Routes>
+                  {/* subdomain root */}
+                  {subdomain && <Route path="/" element={<PublicCompanyPage />} />}
 
-                    {/* PUBLIC ROUTES */}
-                    <Route path="/" element={<LandingPage />} />
-                    <Route path="/login" element={!isAuthenticated ? <LoginForm /> : <Navigate to="/dashboard" />} />
-                    <Route path="/register" element={!isAuthenticated ? <RegisterForm /> : <Navigate to="/dashboard" />} />
-                    <Route path="/events/:eventId" element={<PublicEventDetailsPage />} />
-                    <Route path="/companies/:slug" element={<PublicCompanyPage />} />
-                    <Route path="/events/:eventId" element={<PublicEventPage />} />
-                    <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-                    <Route path="/reset-password" element={<ResetPasswordPage />} />
-                    <Route path="/minha-inscricao/:registrationId" element={<PublicRegistrationStatusPage />} />
-                    <Route path="/feedback-evento/:registrationId" element={<PublicEventFeedbackPage />} />
-                    <Route path="/companies/:companyId/mail-config" element={<CompanySmtpConfigPage />} />
+                  {/* PUBLIC ROUTES */}
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/login" element={!isAuthenticated ? <LoginForm /> : <Navigate to="/dashboard" />} />
+                  <Route path="/register" element={!isAuthenticated ? <RegisterForm /> : <Navigate to="/dashboard" />} />
+                  <Route path="/events/:eventId" element={<PublicEventDetailsPage />} />
+                  <Route path="/companies/:slug" element={<PublicCompanyPage />} />
+                  <Route path="/events/:eventId" element={<PublicEventPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
+                  <Route path="/minha-inscricao/:registrationId" element={<PublicRegistrationStatusPage />} />
+                  <Route path="/feedback-evento/:registrationId" element={<PublicEventFeedbackPage />} />
+                  <Route path="/companies/:companyId/mail-config" element={<CompanySmtpConfigPage />} />
 
-                    <Route path="/agendar/:companySlug/:profileSlug" element={<PublicBookingPage />} />
-                    <Route path="/agendar/cancelar" element={<PublicCancelPage />} />
+                  <Route path="/agendar/:companySlug/:profileSlug" element={<PublicBookingPage />} />
+                  <Route path="/agendar/cancelar" element={<PublicCancelPage />} />
 
-                    {/* PROTECTED ROUTES */}
-                    <Route element={<SecurityGuard />}>
-                      <Route path="/setup-required" element={<ForceSetupPage />} />
-                      <Route path="/dashboard" element={<Dashboard />} />
-                      <Route path="/support" element={<SupportListPage />} />
-                      <Route path="/support/new" element={<CreateSupportTicketPage />} />
-                      <Route path="/support/:ticketId" element={<SupportDetailPage />} />
-                      <Route path="/edit-profile" element={<EditProfilePage />} />
+                  {/* PROTECTED ROUTES */}
+                  <Route element={<SecurityGuard />}>
+                    <Route path="/setup-required" element={<ForceSetupPage />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/support" element={<SupportListPage />} />
+                    <Route path="/support/new" element={<CreateSupportTicketPage />} />
+                    <Route path="/support/:ticketId" element={<SupportDetailPage />} />
+                    <Route path="/edit-profile" element={<EditProfilePage />} />
 
-                      <Route path="/platform-admins" element={<PlatformAdminsPage />} />
-                      <Route path="/platform-admins/create" element={<PlatformAdminFormPage />} />
-                      <Route path="/platform-admins/edit/:id" element={<PlatformAdminFormPage />} />
-                      <Route path="/admin/platform-email-signature" element={<PlatformEmailSignaturePage />} />
-                      <Route path="/platform/settings" element={<PlatformSettingsPage />} />
+                    <Route path="/platform-admins" element={<PlatformAdminsPage />} />
+                    <Route path="/platform-admins/create" element={<PlatformAdminFormPage />} />
+                    <Route path="/platform-admins/edit/:id" element={<PlatformAdminFormPage />} />
+                    <Route path="/admin/platform-email-signature" element={<PlatformEmailSignaturePage />} />
+                    <Route path="/platform/settings" element={<PlatformSettingsPage />} />
 
-                      <Route path="/companies/create" element={<CreateCompanyPage />} />
+                    <Route path="/users/scoped" element={<ScopedUsersListPage />} />
 
-                      <Route path="/change-password" element={<ChangePasswordPage />} />
-                      <Route path="/events/list" element={<ListEventsPage />} />
-                      <Route path="/events/preview/:eventId" element={<EventRegistrationPreviewPage />} />
-                      <Route path="/events/create" element={<CreateEventPage />} />
-                      <Route path="/events/edit/:eventId" element={<EditEventPage />} />
-                      <Route path="/events/:eventId/registrations" element={<EventRegistrationsPage />} />
-                      <Route path="/events/feedback" element={<EventFeedbackPage />} />
+                    <Route path="/companies/create" element={<CreateCompanyPage />} />
 
-                      <Route path="/event-staff" element={<EventStaffListPage />} />
-                      <Route path="/event-staff/company/:companyId" element={<EventStaffListPage />} />
-                      <Route path="/event-staff/new" element={<EditEventStaffPage />} />
-                      <Route path="/event-staff/edit/:staffId" element={<EditEventStaffPage />} />
+                    <Route path="/change-password" element={<ChangePasswordPage />} />
+                    <Route path="/events/list" element={<ListEventsPage />} />
+                    <Route path="/events/preview/:eventId" element={<EventRegistrationPreviewPage />} />
+                    <Route path="/events/create" element={<CreateEventPage />} />
+                    <Route path="/events/edit/:eventId" element={<EditEventPage />} />
+                    <Route path="/events/:eventId/registrations" element={<EventRegistrationsPage />} />
+                    <Route path="/events/feedback" element={<EventFeedbackPage />} />
 
-                      <Route path="/event-checkin" element={<EventCheckInPage />} />
+                    <Route path="/event-staff" element={<EventStaffListPage />} />
+                    <Route path="/event-staff/company/:companyId" element={<EventStaffListPage />} />
+                    <Route path="/event-staff/new" element={<EditEventStaffPage />} />
+                    <Route path="/event-staff/edit/:staffId" element={<EditEventStaffPage />} />
 
-                      <Route path="operators" element={<OperatorsListPage />} />
-                      <Route path="operators/company/:companyId" element={<OperatorsListPage />} />
-                      <Route path="operators/new" element={<EditOperatorPage />} />
-                      <Route path="operators/edit/:operatorId" element={<EditOperatorPage />} />
+                    <Route path="/event-checkin" element={<EventCheckInPage />} />
 
-                      <Route path="/schedules" element={<SchedulesListPage />} />
-                      <Route path="/schedules/company/:companyId" element={<SchedulesListPage />} />
-                      <Route path="/schedules/new" element={<EditSchedulePage />} />
-                      <Route path="/schedules/edit/:scheduleId" element={<EditSchedulePage />} />
+                    <Route path="operators" element={<OperatorsListPage />} />
+                    <Route path="operators/company/:companyId" element={<OperatorsListPage />} />
+                    <Route path="operators/new" element={<EditOperatorPage />} />
+                    <Route path="operators/edit/:operatorId" element={<EditOperatorPage />} />
 
-                      <Route path="services" element={<ServicesListPage />} />
-                      <Route path="services/company/:companyId" element={<ServicesListPage />} />
-                      <Route path="services/new" element={<EditServicePage />} />
-                      <Route path="services/edit/:serviceId" element={<EditServicePage />} />
+                    <Route path="/schedules" element={<SchedulesListPage />} />
+                    <Route path="/schedules/company/:companyId" element={<SchedulesListPage />} />
+                    <Route path="/schedules/new" element={<EditSchedulePage />} />
+                    <Route path="/schedules/edit/:scheduleId" element={<EditSchedulePage />} />
 
-                      <Route path="user-types" element={<UserTypesListPage />} />
-                      <Route path="user-types/company/:companyId" element={<UserTypesListPage />} />
-                      <Route path="user-types/new" element={<EditUserTypePage />} />
-                      <Route path="user-types/edit/:userTypeId" element={<EditUserTypePage />} />
+                    <Route path="services" element={<ServicesListPage />} />
+                    <Route path="services/company/:companyId" element={<ServicesListPage />} />
+                    <Route path="services/new" element={<EditServicePage />} />
+                    <Route path="services/edit/:serviceId" element={<EditServicePage />} />
 
-                      <Route path="user-data/new" element={<EditUserDataPage />} />
-                      <Route path="user-data/edit/:userDataId" element={<EditUserDataPage />} />
-                      <Route path="user-data/:userTypeId" element={<UserDataListPage />} />
-                      <Route path="user-data/by-type/:userTypeId" element={<UserDataListPage />} />
+                    <Route path="user-types" element={<UserTypesListPage />} />
+                    <Route path="user-types/company/:companyId" element={<UserTypesListPage />} />
+                    <Route path="user-types/new" element={<EditUserTypePage />} />
+                    <Route path="user-types/edit/:userTypeId" element={<EditUserTypePage />} />
 
-                      <Route path="counters" element={<CountersListPage />} />
-                      <Route path="counters/company/:companyId" element={<CountersListPage />} />
-                      <Route path="counters/new" element={<EditCounterPage />} />
-                      <Route path="counters/edit/:counterId" element={<EditCounterPage />} />
+                    <Route path="user-data/new" element={<EditUserDataPage />} />
+                    <Route path="user-data/edit/:userDataId" element={<EditUserDataPage />} />
+                    <Route path="user-data/:userTypeId" element={<UserDataListPage />} />
+                    <Route path="user-data/by-type/:userTypeId" element={<UserDataListPage />} />
 
-                      <Route path="kiosks" element={<KiosksListPage />} />
-                      <Route path="kiosks/company/:companyId" element={<KiosksListPage />} />
-                      <Route path="kiosks/new" element={<EditKioskPage />} />
-                      <Route path="kiosks/edit/:kioskId" element={<EditKioskPage />} />
+                    <Route path="counters" element={<CountersListPage />} />
+                    <Route path="counters/company/:companyId" element={<CountersListPage />} />
+                    <Route path="counters/new" element={<EditCounterPage />} />
+                    <Route path="counters/edit/:counterId" element={<EditCounterPage />} />
 
-                      <Route path="displays" element={<DisplaysListPage />} />
-                      <Route path="displays/company/:companyId" element={<DisplaysListPage />} />
-                      <Route path="displays/new" element={<EditDisplayPage />} />
-                      <Route path="displays/edit/:displayId" element={<EditDisplayPage />} />
+                    <Route path="kiosks" element={<KiosksListPage />} />
+                    <Route path="kiosks/company/:companyId" element={<KiosksListPage />} />
+                    <Route path="kiosks/new" element={<EditKioskPage />} />
+                    <Route path="kiosks/edit/:kioskId" element={<EditKioskPage />} />
 
-                      <Route path="operator" element={<OperatorIndexRedirect />} />
-                      <Route path="operator/setup" element={<OperatorSetupPage />} />
-                      <Route path="operator/dashboard" element={<OperatorLiveDashboard />} />
+                    <Route path="displays" element={<DisplaysListPage />} />
+                    <Route path="displays/company/:companyId" element={<DisplaysListPage />} />
+                    <Route path="displays/new" element={<EditDisplayPage />} />
+                    <Route path="displays/edit/:displayId" element={<EditDisplayPage />} />
 
-                      <Route path="/operator-sessions" element={<ActiveSessionsPage />} />
-                      <Route path="/devices-monitor" element={<DevicesStatusPage />} />
+                    <Route path="operator" element={<OperatorIndexRedirect />} />
+                    <Route path="operator/setup" element={<OperatorSetupPage />} />
+                    <Route path="operator/dashboard" element={<OperatorLiveDashboard />} />
 
-                      <Route path="/dashboard/queues" element={<QueueDashboardPage />} />
-                      <Route path="/dashboard/queues/:companyId" element={<QueueDashboardPage />} />
+                    <Route path="/operator-sessions" element={<ActiveSessionsPage />} />
+                    <Route path="/devices-monitor" element={<DevicesStatusPage />} />
 
-                      <Route path="/feedback-auditory" element={<FeedbackAuditoryPage />} />
+                    <Route path="/dashboard/queues" element={<QueueDashboardPage />} />
+                    <Route path="/dashboard/queues/:companyId" element={<QueueDashboardPage />} />
 
-                      <Route path="/companies/list" element={<ListCompaniesPage />} />
-                      <Route path="/companies/create" element={<CreateCompanyPage />} />
-                      <Route path="/companies/edit/:companyId" element={<CompanyEditPage />} />
-                      <Route path="/companies/homepage/edit/:companyId" element={<CompanyHomepageEditPage />} />
+                    <Route path="/feedback-auditory" element={<FeedbackAuditoryPage />} />
 
-                      <Route path="/company-admins/list" element={<ListCompanyAdminsPage />} />
-                      <Route path="/company-admins/list/:companyId" element={<ListCompanyAdminsPage />} />
-                      <Route path="/company-admins/create" element={<CreateCompanyAdminPage />} />
-                      <Route path="/company-admins/edit/:adminId" element={<EditCompanyAdminPage />} />
+                    <Route path="/companies/list" element={<ListCompaniesPage />} />
+                    <Route path="/companies/create" element={<CreateCompanyPage />} />
+                    <Route path="/companies/edit/:companyId" element={<CompanyEditPage />} />
+                    <Route path="/companies/homepage/edit/:companyId" element={<CompanyHomepageEditPage />} />
 
-                      <Route path="/companies/smtp-config/:companyId" element={<CompanySmtpConfigPage />} />
-                      <Route path="/company-details" element={<CompanyEditPage />} />
+                    <Route path="/company-admins/list" element={<ListCompanyAdminsPage />} />
+                    <Route path="/company-admins/list/:companyId" element={<ListCompanyAdminsPage />} />
+                    <Route path="/company-admins/create" element={<CreateCompanyAdminPage />} />
+                    <Route path="/company-admins/edit/:adminId" element={<EditCompanyAdminPage />} />
 
-                      <Route path="/companies/payment-config/:companyId" element={<CompanyPaymentSettingsPage />} />
-                      <Route path="/company-payments" element={<CompanyPaymentSettingsPage />} />
+                    <Route path="/companies/smtp-config/:companyId" element={<CompanySmtpConfigPage />} />
+                    <Route path="/company-details" element={<CompanyEditPage />} />
 
-                      <Route path="/email-templates" element={<EmailTemplatesPage />} />
-                      <Route path="/email-templates/new" element={<EditTemplatePage />} />
-                      <Route path="/email-templates/edit/:templateId" element={<EditTemplatePage />} />
+                    <Route path="/companies/payment-config/:companyId" element={<CompanyPaymentSettingsPage />} />
+                    <Route path="/company-payments" element={<CompanyPaymentSettingsPage />} />
 
-                      <Route path="/logs" element={<LogsPage />} />
-                      <Route path="/sent-emails-log" element={<SentEmailsLogPage />} />
-                      <Route path="/system-health" element={<SystemHealthPage />} />
+                    <Route path="/email-templates" element={<EmailTemplatesPage />} />
+                    <Route path="/email-templates/new" element={<EditTemplatePage />} />
+                    <Route path="/email-templates/edit/:templateId" element={<EditTemplatePage />} />
 
-                      <Route path="/admin/file-manager" element={<AdminFileManagerPage />} />
-                      <Route path="/admin/db-console" element={<AdminDbConsolePage />} />
+                    <Route path="/logs" element={<LogsPage />} />
+                    <Route path="/sent-emails-log" element={<SentEmailsLogPage />} />
+                    <Route path="/system-health" element={<SystemHealthPage />} />
 
-                      <Route path="/backups" element={<BackupsPage />} />
-                      <Route path="/my-registrations" element={<MyRegistrationsPage />} />
+                    <Route path="/admin/file-manager" element={<AdminFileManagerPage />} />
+                    <Route path="/admin/db-console" element={<AdminDbConsolePage />} />
+                    <Route path="/users/platform" element={<PlatformUsersListPage />} />
+                    <Route path="/roles" element={<RolesListPage />} />
 
-                      <Route path="/policy-documents" element={<PolicyDocumentsPage />} />
-                      <Route path="/policy-documents/new" element={<EditPolicyPage />} />
-                      <Route path="/policy-documents/edit/:policyId" element={<EditPolicyPage />} />
+                    <Route path="/backups" element={<BackupsPage />} />
+                    <Route path="/my-registrations" element={<MyRegistrationsPage />} />
 
-                      <Route path="/scheduling/resources" element={<ResourcesPage />} />
-                      <Route path="/scheduling/profiles" element={<ProfilesPage />} />
-                      <Route path="/scheduling/book-test" element={<TestBookingPage />} />
-                      <Route path="/scheduling/appointments" element={<AppointmentsListPage />} />
-                      <Route path="/scheduling/calendar" element={<SchedulingCalendarPage />} />
-                    </Route>
+                    <Route path="/policy-documents" element={<PolicyDocumentsPage />} />
+                    <Route path="/policy-documents/new" element={<EditPolicyPage />} />
+                    <Route path="/policy-documents/edit/:policyId" element={<EditPolicyPage />} />
 
-                    <Route path="*" element={<p>Página não encontrada</p>} />
-                  </Routes>
-                </main>
+                    <Route path="/scheduling/resources" element={<ResourcesPage />} />
+                    <Route path="/scheduling/profiles" element={<ProfilesPage />} />
+                    <Route path="/scheduling/book-test" element={<TestBookingPage />} />
+                    <Route path="/scheduling/appointments" element={<AppointmentsListPage />} />
+                    <Route path="/scheduling/calendar" element={<SchedulingCalendarPage />} />
 
-              </div>
+                    <Route path="/correspondence/inbox" element={<InboxPage />} />
+                    <Route path="/correspondence/inbox/company/:companyId" element={<InboxPage />} />
+                    
+                    <Route path="/correspondence/cases/company/:companyId/case/:caseId" element={<CaseDetailPage />} />               
+                    <Route path="/correspondence/cases/company/:companyId" element={<CasesListPage />} />
+                    <Route path="/correspondence/cases" element={<CasesListPage />} /> 
 
-              {/* Footer FORA DO SCROLL (não mostrar na LandingPage) */}
-              {!isLanding && !isAsPublic &&(
-                <Footer
-                  compactSpacing
-                  tone="dark"
-                  borderTone="brand"
-                />
-              )}
+                    
+                    <Route path="/correspondence/cases/:caseId/outbound/create" element={<CreateOutboundPage />} />
+                    <Route path="/correspondence/cases/:caseId/outbound/:outboundId" element={<OutboundDetailPage />} />
+                    <Route path="/correspondence/cases/:caseId/documents/:documentId" element={<DocumentDetailPage />} />
+                    <Route path="/correspondence/inbound/manual" element={<RegisterInboundManualWizardPage  />} />
+                    <Route path="/correspondence/inbox/:registryId" element={<InboxDecisionPage  />} />
+                    <Route path="/correspondence/outbox" element={<OutboxPage />} />
+                    <Route path="/correspondence/outbound/new" element={<CreateOutboundPage />} />
+                    <Route path="/correspondence/outbox/company/:companyId" element={<OutboxPage />} />                
+                    <Route path="/correspondence/inbox/import-email" element={<ImportEmailPage />} />
+
+                  </Route>
+
+                  <Route path="*" element={<p>Página não encontrada</p>} />
+                </Routes>
+              </main>
 
             </div>
+
+            {/* Footer FORA DO SCROLL (não mostrar na LandingPage) */}
+            {!isLanding && !isAsPublic &&(
+              <Footer
+                compactSpacing
+                tone="dark"
+                borderTone="brand"
+              />
+            )}
 
           </div>
 
         </div>
 
       </div>
+    </div>
   );
 }
 
@@ -463,10 +533,10 @@ export default function App() {
             <SubdomainProvider>
               <NotificationProvider>
                 <HelmetProvider>
-                  <ConfirmModalPortal />
-                  <InfoModalPortal />
                   <RouteObserver />
                   <AppLayout />
+                  <ConfirmModalPortal />
+                  <InfoModalPortal />                  
                 </HelmetProvider>
               </NotificationProvider>
             </SubdomainProvider>

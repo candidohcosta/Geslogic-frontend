@@ -21,7 +21,7 @@ export function SettingsSectionCard({
   return (
     <Card
       className={cn(
-        'bg-white rounded-xl border border-gray-200 shadow-sm',
+        'bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible',
         accent && 'border-t-2 border-t-brand-500',
         className
       )}
@@ -36,7 +36,11 @@ export function SettingsSectionCard({
           )}
         </div>
       )}
-      <div className="px-6 pb-6 pt-2">{children}</div>
+
+      {/* PATCH CRÍTICO: permite overflow horizontal do conteúdo */}
+      <div className="px-6 pb-6 pt-2 overflow-x-auto overflow-y-visible min-w-0">
+        {children}
+      </div>
     </Card>
   );
 }

@@ -70,6 +70,12 @@ export interface UserData {
   //refreshToken?: string; 
   eventStaffDetails?: EventStaffDetailsData;
   grants?: string[]; // lista de FeatureKey atribuídas pelo backend
+
+  
+  effectiveRole?: string | null;
+  roleType?: string | null;
+  isSuperAdmin?: boolean;
+
 }
 
 // Interface para os detalhes do participante no registo

@@ -25,13 +25,13 @@ function isHtmlEmpty(html: string): boolean {
 }
 
 // GET/PUT simples
-async function apiGetPlatformSettings() {
+async function apiGetPlatformEmailSignature() {
   const res = await fetch('/platform-settings', { credentials: 'include' });
   if (!res.ok) throw new Error('Falha ao obter definições da plataforma.');
   return res.json();
 }
 
-async function apiUpdatePlatformSettings(payload: { defaultEmailSignatureHtml: string | null }) {
+async function apiUpdatePlatformEmailSignature(payload: { defaultEmailSignatureHtml: string | null }) {
   const res = await fetch('/platform-settings', {
     method: 'PUT',
     credentials: 'include',
@@ -54,7 +54,7 @@ const PlatformEmailSignaturePage: React.FC = () => {
   // Query inicial
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['platform-settings'],
-    queryFn: apiGetPlatformSettings,
+    queryFn: apiGetPlatformEmailSignature,
   });
 
   // Hidratar assinatura quando carregada
@@ -67,7 +67,7 @@ const PlatformEmailSignaturePage: React.FC = () => {
   // Mutation — v5: isPending
   const { mutate: save, isPending: saving } = useMutation({
     mutationFn: () =>
-      apiUpdatePlatformSettings({
+      apiUpdatePlatformEmailSignature({
         defaultEmailSignatureHtml: signatureHtml || null,
       }),
     onSuccess: () => refetch(),

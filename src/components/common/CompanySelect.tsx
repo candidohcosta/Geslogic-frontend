@@ -64,7 +64,14 @@ export const CompanySelect: React.FC<CompanySelectProps> = (props) => {
       <Label htmlFor={labelId} className="sr-only">{label}</Label>
 
       <Select
-        value={('value' in props ? props.value : undefined) as string}
+        /* value={('value' in props ? props.value : undefined) as string} */
+        
+  value={
+    'value' in props && props.value !== ''
+      ? props.value
+      : undefined
+  }
+
         onValueChange={handleChange}
         disabled={disabled}
       >
@@ -100,10 +107,10 @@ export const CompanySelect: React.FC<CompanySelectProps> = (props) => {
         {/* caret à direita */}
         </SelectTrigger>
 
-
         <SelectContent
           position="popper"
-          align="end"
+          side="bottom"
+          align="start"
           sideOffset={4}
           className={['min-w-[26rem] max-w-[42rem]', contentClassName || ''].join(' ')}
         >
@@ -118,6 +125,7 @@ export const CompanySelect: React.FC<CompanySelectProps> = (props) => {
             </SelectItem>
           ))}
         </SelectContent>
+
       </Select>
     </div>
   );

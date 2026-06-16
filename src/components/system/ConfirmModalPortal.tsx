@@ -1,5 +1,6 @@
 // src/components/system/ConfirmModalPortal.tsx
 import React from 'react';
+import ReactDOM from 'react-dom';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
 type Payload = {
@@ -32,7 +33,7 @@ export const ConfirmModalPortal: React.FC = () => {
     setPayload(null);
   };
 
-  return (
+  const modal = (
     <ConfirmModal
       title={payload.title}
       message={payload.message}
@@ -42,4 +43,10 @@ export const ConfirmModalPortal: React.FC = () => {
       onCancel={() => handle(false)}
     />
   );
+
+  return ReactDOM.createPortal(
+    modal,
+    document.getElementById('global-modal-root') as HTMLElement
+  );
+
 };

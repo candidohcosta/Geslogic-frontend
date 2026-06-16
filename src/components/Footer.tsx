@@ -1,4 +1,6 @@
 // src/components/Footer.tsx
+import { getPlatformUiTheme } from '../services/api';
+import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 
 interface FooterProps {
@@ -34,6 +36,14 @@ const Footer: React.FC<FooterProps> = ({
   // Espaçamento vertical do próprio footer
   const padY = compactSpacing ? 'py-2 md:py-2.5' : 'py-3 md:py-4';
 
+  
+  const { data: uiTheme } = useQuery({
+    queryKey: ['platform-settings','ui-theme'],
+    queryFn: getPlatformUiTheme,
+    staleTime: 30000,
+  });
+
+
   return (
     <footer
       className={[
@@ -44,6 +54,11 @@ const Footer: React.FC<FooterProps> = ({
         padY,
       ].join(' ')}
       role="contentinfo"
+      style={{
+        backgroundColor: uiTheme?.footerBg ?? undefined,
+        color: uiTheme?.footerText ?? undefined,
+        borderColor: uiTheme?.footerBorder ?? undefined,
+      }}
     >
       <div className="mx-auto w-full max-w-[1400px] px-4 md:px-6 lg:px-8 text-xs flex items-center justify-between">
         <span className="whitespace-nowrap">

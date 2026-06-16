@@ -6,7 +6,7 @@ import { FilePurpose } from '../../../types/file';
 import { SettingsSectionCard } from '../../../components/templates/SettingsSectionCard';
 import { Button } from '../../../components/ui/Button';
 import { Loader2 } from 'lucide-react';
-import { getPlatformSettings, updatePlatformSettings } from '../../../services/api';
+import { getPlatformEmailSignature, updatePlatformEmailSignature } from '../../../services/api';
 
 type Props = {
   onHeaderActionsChange?: (actions: React.ReactNode) => void;
@@ -15,8 +15,8 @@ type Props = {
 export default function EmailSignatureTab({ onHeaderActionsChange }: Props) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['platform-settings'],
-    queryFn: getPlatformSettings,
+    queryKey: ['platform-settings', 'signature'],
+    queryFn: getPlatformEmailSignature,
   });
 
   const original = data?.defaultEmailSignatureHtml ?? '';
@@ -30,8 +30,8 @@ export default function EmailSignatureTab({ onHeaderActionsChange }: Props) {
   const valid = html.trim() !== '';
 
   const { mutate: save, isPending } = useMutation({
-    mutationFn: () => updatePlatformSettings({ defaultEmailSignatureHtml: html || null }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['platform-settings'] }),
+    mutationFn: () => updatePlatformEmailSignature({ defaultEmailSignatureHtml: html || null }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['platform-settings', 'signature'] })
   });
 
   const reset = () => setHtml(original || '');
