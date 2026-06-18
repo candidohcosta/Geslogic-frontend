@@ -35,7 +35,7 @@ export default function OutboundSendDrawer({
 const { data: catalog, isLoading: isCatalogLoading } =  useCorrespondenceCatalog();
 
 const { data: documentTypes = [], isLoading: isLoadingTypes } = 
-  useDocumentTypesCatalog(companyId);  // ✅ NOVO
+  useDocumentTypesCatalog(companyId, 'OUT');  // ✅ NOVO
 
 console.log('CATALOG:', catalog);
 
