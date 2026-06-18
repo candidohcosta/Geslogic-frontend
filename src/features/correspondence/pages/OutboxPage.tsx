@@ -538,9 +538,10 @@ rowClassName: (e: any) => {
         />
       )}
 
-      {sendDrawerRegistry && (
+      {sendDrawerRegistry && selectedCompanyId && (
         <OutboundSendDrawer
           registry={sendDrawerRegistry}
+          companyId={selectedCompanyId}
           isOpen={!!sendDrawerRegistry}
           onClose={() => setSendDrawerRegistry(null)}
         />

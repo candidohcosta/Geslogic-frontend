@@ -11,22 +11,33 @@ import { X } from 'lucide-react';
 import { OutboundRegistry } from '../../types/registry.types';
 import { useOutboundRegistryFiles } from '../hooks/useOutboundRegistryFiles';
 import { useSendOutboundRegistry } from '../hooks/useSendOutboundRegistry';
+import { useCorrespondenceCatalog } from '../../hooks/useCorrespondenceCatalog';
+import { useDocumentTypesCatalog } from '../hooks/useDocumentTypesCatalog'; // ✅ NOVO
 
 type DecisionType = 'SEND' | 'ON_HOLD' | 'CANCEL';
 type CaseMode = 'NONE' | 'CREATE' | 'LINK'; // 🔥 NOVO
 
 interface Props {
   registry: OutboundRegistry;
+  companyId: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
 export default function OutboundSendDrawer({
   registry,
+  companyId,
   isOpen,
   onClose,
 }: Props) {
   const { data: files = [] } = useOutboundRegistryFiles(registry.id);
+
+const { data: catalog, isLoading: isCatalogLoading } =  useCorrespondenceCatalog();
+
+const { data: documentTypes = [], isLoading: isLoadingTypes } = 
+  useDocumentTypesCatalog(companyId);  // ✅ NOVO
+
+console.log('CATALOG:', catalog);
 
   const [decision, setDecision] = useState<DecisionType | null>(null);
   const [comment, setComment] = useState('');
@@ -37,6 +48,15 @@ export default function OutboundSendDrawer({
 
 const [selectedDocumentType, setSelectedDocumentType] = useState('');
 const [searchTerm, setSearchTerm] = useState('');
+
+
+
+const availableTypes =
+  catalog?.defaults?.enabledDocumentTypes?.filter((type: string) => {
+    const def = catalog?.documentTypes?.[type];
+
+    return def?.allowedDirections?.includes('OUT');
+  }) ?? [];
 
   const sendMutation = useSendOutboundRegistry();
 
@@ -311,22 +331,29 @@ sendMutation.mutate(
 
     {caseMode === 'CREATE' && (
       <div className="space-y-2">
-        <Label>Tipo de expediente</Label>
+        <Label>Tipo de expediente *</Label>
 
-        <select
-          value={selectedDocumentType}
-          onChange={(e) => setSelectedDocumentType(e.target.value)}
-          className="w-full border rounded px-3 py-2"
-        >
-          <option value="">Selecionar tipo...</option>
-
-          {/* 🔥 Ideal: vir do catálogo */}
-          <option value="OUTBOUND_LETTER">Carta Enviada</option>
-          <option value="CONTRACT">Contrato</option>
-          <option value="INVOICE">Fatura</option>
-          <option value="MEMO">Memorando</option>
-          <option value="POLICY">Política</option>
-        </select>
+        {isLoadingTypes ? (
+          <p className="text-sm text-gray-500">A carregar tipos...</p>
+        ) : documentTypes.length === 0 ? (
+          <p className="text-sm text-red-500">
+            Nenhum tipo de expediente disponível para esta empresa.
+          </p>
+        ) : (
+          <select
+            value={selectedDocumentType}
+            onChange={(e) => setSelectedDocumentType(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          >
+            <option value="">Selecionar tipo...</option>
+            {documentTypes.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.label}
+                {type.description ? ` — ${type.description}` : ''}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
     )}
 
